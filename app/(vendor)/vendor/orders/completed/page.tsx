@@ -76,11 +76,17 @@ function CompletedOrderCard({
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-xs text-slate-400 font-mono">{rental.rentalNumber}</p>
                   <OrderStatusBadge status={rental.status} />
-                  {rental.ratings?.average > 0 && (
+                  {/* {rental?.ratings?.average > 0 && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-semibold rounded-full">
                       <Star className="h-2.5 w-2.5 fill-green-600" />
-                      {rental.ratings.average.toFixed(1)} ({rental.ratings.count})
+                      {rental?.ratings?.average.toFixed(1)} ({rental.ratings.count})
                     </span>
+                  )} */}
+                  {((rental?.ratings?.average ?? 0) > 0) && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-semibold rounded-full">
+                          <Star className="h-2.5 w-2.5 fill-green-600" />
+                          {rental?.ratings?.average?.toFixed(1)} ({rental.ratings.count})
+                      </span>
                   )}
                 </div>
                 <h3 className="font-semibold text-slate-900 mt-1">{rental.product.basicInfo.name}</h3>
@@ -171,7 +177,7 @@ function CompletedOrderCard({
                 </div>
               </div>
               
-              <div>
+              {/* <div>
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Customer Rating</p>
                 {rental.ratings?.average > 0 ? (
                   <div className="flex items-center gap-1">
@@ -182,7 +188,20 @@ function CompletedOrderCard({
                 ) : (
                   <p className="text-sm text-slate-400">No rating yet</p>
                 )}
-              </div>
+              </div> */}
+
+              <div>
+    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Customer Rating</p>
+    {(rental.ratings?.average ?? 0) > 0 ? (
+        <div className="flex items-center gap-1">
+            <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+            <span className="font-semibold">{rental.ratings?.average?.toFixed(1) ?? '0.0'}</span>
+            <span className="text-slate-400 text-sm">({rental.ratings?.count ?? 0} reviews)</span>
+        </div>
+    ) : (
+        <p className="text-sm text-slate-400">No rating yet</p>
+    )}
+</div>
             </div>
           </motion.div>
         )}

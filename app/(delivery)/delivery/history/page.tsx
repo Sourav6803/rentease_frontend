@@ -158,7 +158,7 @@ interface EarningsBreakdownItem {
 }
 
 interface EarningsData {
-  period: 'week' | 'month' | 'year';
+  period: string;
   total: number;
   currency: string;
   breakdown: EarningsBreakdownItem[];
@@ -197,8 +197,8 @@ interface DeliveryStats {
   totalDeliveries: number;
   rating: number;
   onTimeRate: number;
-  employeeId: string;
-  zone: string;
+  employeeId?: string;
+  zone?: string;
 }
 
 interface ProfilePerformance {
@@ -571,8 +571,8 @@ export default function DeliveryHistoryPage() {
           endDate,
         });
 
-        const data = res?.data ?? res;
-        const list: DeliveryHistoryItem[] = data?.deliveries ?? [];
+        const data = res?.data;
+        const list: DeliveryHistoryItem[] = (data?.deliveries ?? []) as unknown as DeliveryHistoryItem[];
 
         if (list.length === 0 && page === 1) {
           // Backend stub fallback — compose from activity + earnings.
@@ -580,9 +580,9 @@ export default function DeliveryHistoryPage() {
             deliveryPartnerApi.getActivity(50),
             deliveryPartnerApi.getEarnings('year'),
           ]);
-          const activities: ActivityItem[] = (activityRes?.data ?? activityRes)?.activities ?? [];
-          const earningsData: EarningsData = (earningsRes?.data ?? earningsRes)?.breakdown
-            ? (earningsRes.data ?? earningsRes)
+          const activities: ActivityItem[] = (activityRes.data?.activities ?? []) as unknown as ActivityItem[];
+          const earningsData: EarningsData = earningsRes.data
+            ? earningsRes.data
             : { period: 'year', total: 0, currency: 'INR', breakdown: [] };
 
           const fallback = buildFallbackHistory(activities, earningsData);
@@ -592,7 +592,7 @@ export default function DeliveryHistoryPage() {
         } else {
           setHistory((prev) => (append ? [...prev, ...list] : list));
           setPagination(data?.pagination ?? { page, limit: 20, total: list.length, pages: 1 });
-          setSummary(data?.summary ?? null);
+          setSummary(null);
           setIsUsingFallback(false);
         }
       } catch (err) {
@@ -616,16 +616,13 @@ export default function DeliveryHistoryPage() {
       ]);
 
       if (statsRes.status === 'fulfilled') {
-        const d = (statsRes.value?.data ?? statsRes.value)?.stats ?? statsRes.value;
-        setStats(d);
+        setStats(statsRes.value?.data?.stats ?? null);
       }
       if (activityRes.status === 'fulfilled') {
-        const d = (activityRes.value?.data ?? activityRes.value)?.activities ?? [];
-        setActivity(d);
+        setActivity((activityRes.value?.data?.activities ?? []) as unknown as ActivityItem[]);
       }
       if (profileRes.status === 'fulfilled') {
-        const d = (profileRes.value?.data ?? profileRes.value)?.profile ?? profileRes.value;
-        setProfilePerf(d?.performance ?? null);
+        setProfilePerf(profileRes.value?.data?.profile?.performance ?? null);
       }
       void perfRes; // performance summary currently surfaced via stats/profile cards
     } catch {
@@ -637,8 +634,7 @@ export default function DeliveryHistoryPage() {
     setEarningsLoading(true);
     try {
       const res = await deliveryPartnerApi.getEarnings(period);
-      const d = (res?.data ?? res) as EarningsData;
-      setEarnings(d);
+      setEarnings(res?.data ?? null);
     } catch {
       toast.error("Couldn't load earnings for this period.");
     } finally {
@@ -745,8 +741,7 @@ export default function DeliveryHistoryPage() {
     setIssueDesc('');
     try {
       const res = await deliveryPartnerApi.getDeliveryById(id);
-      const d = (res?.data ?? res)?.delivery ?? res;
-      setDetail(d);
+      setDetail((res?.data?.delivery as unknown as DeliveryDetail) ?? null);
     } catch (err: any) {
       const status = err?.response?.status;
       if (status === 403 || status === 404) {

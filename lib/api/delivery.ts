@@ -100,6 +100,8 @@ export interface DeliveryPartnerProfile {
   activeAssignmentsCount: number
   createdAt: string
   updatedAt: string
+  totalDeliveries?: number
+  onTimeRate?: number
 }
 
 export interface DashboardStats {
@@ -117,6 +119,7 @@ export interface DashboardStats {
   avgDeliveryTime: number
   employeeId?: string
   zone?: string
+  avgPickupTime?: number
 }
 
 // Alias for backward compatibility
@@ -498,6 +501,7 @@ export const deliveryPartnerApi = {
       status?: string; 
       startDate?: string; 
       endDate?: string;
+      summary?: string
     }) =>
       get<ApiEnvelope<HistoryData>>('/api/v1/deliveries/history', params as Record<string, string | number>),
     

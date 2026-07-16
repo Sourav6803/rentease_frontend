@@ -85,8 +85,8 @@ export default function DangerZonePage() {
         return true
       }
       return false
-    } catch (error) {
-      const err = error as AxiosError
+    } catch (error ) {
+      const err = error as  AxiosError<{ message?: string }>
       console.error('Error updating security:', err)
       toast.error(err.response?.data?.message || 'Failed to update security settings')
       return false

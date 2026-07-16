@@ -35,6 +35,7 @@ export default function AccountSettingsPage() {
     phone: '',
     bio: '',
     location: '',
+    username: ''
   })
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function AccountSettingsPage() {
           phone: data.account.phone,
           bio: data.account.bio || '',
           location: data.account.location || 'New Delhi, India',
+          username: data?.account?.username || 'user123'
         })
       }
       setIsLoading(false)
@@ -103,6 +105,7 @@ export default function AccountSettingsPage() {
         phone: data.account.phone,
         bio: data.account.bio || '',
         location: data.account.location || 'New Delhi, India',
+        username: data.account?.username || 'user123'
       })
     }
     setIsLoading(false)

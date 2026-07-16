@@ -110,6 +110,8 @@ export interface ProductRow {
   slug?: string
   inventory?: { availableQuantity?: number; totalQuantity?: number }
   createdAt?: string
+  /** Index signature so ProductRow satisfies DataTable's Record constraint. */
+  [key: string]: unknown
 }
 
 export interface TopProducts {

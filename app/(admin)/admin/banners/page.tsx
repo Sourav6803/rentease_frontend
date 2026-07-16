@@ -104,6 +104,9 @@ interface Banner {
   }
   createdAt: string
   updatedAt: string
+  aiPrompt?: string
+  aiGenerated?: boolean
+  aiGenerationError?: string | null
 }
 
 interface BannerListResponse {
@@ -114,6 +117,13 @@ interface BannerListResponse {
     total: number
     pages: number
   }
+}
+
+// Extended banner payload for create/update with AI settings
+interface BannerPayload extends Partial<Banner> {
+  useAIImage?: boolean
+  regenerateAIImage?: boolean
+  aiPrompt?: string
 }
 
 // Dedicated, fully-required form state so every field is always a defined
@@ -154,8 +164,6 @@ const TYPE_STYLES: Record<BannerType, string> = {
   strip: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
   deal: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
 }
-
-
 
 const EMPTY_FORM: BannerFormState = {
   title: '',
@@ -208,7 +216,7 @@ function computeCtr(clicks: number, impressions: number) {
 function bannerToFormState(banner: Banner): BannerFormState {
   // The prompt is fetched fresh from the backend by the effect once the modal
   // opens (seeded here with any prompt persisted on the banner).
-  const aiPrompt = (banner as any).aiPrompt ?? '';
+  const aiPrompt = (banner as any).aiPrompt ?? ''
 
   return {
     title: banner.title ?? '',
@@ -247,7 +255,7 @@ function bannerToFormState(banner: Banner): BannerFormState {
   }
 }
 
-function formStateToPayload(form: BannerFormState): Partial<Banner> {
+function formStateToPayload(form: BannerFormState): BannerPayload {
   return {
     title: form.title.trim(),
     subtitle: form.subtitle.trim() || undefined,
@@ -318,7 +326,10 @@ export default function BannersPage() {
         // Ignore aborts / transient errors — keep whatever is in the textarea.
       }
     }, 400)
-    return () => { clearTimeout(timeout); controller.abort() }
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
   }, [formData.type, formData.title, formData.description, formData.theme.accent, formData.useAIImage])
 
   // Debounce free-text search so we don't refetch on every keystroke.
@@ -330,33 +341,29 @@ export default function BannersPage() {
     return () => clearTimeout(timeout)
   }, [searchInput])
 
-  // const { data: response, isLoading, isFetching, error } = useQuery<BannerListResponse>({
-  //   queryKey: ['admin', 'banners', page],
-  //   queryFn: () =>
-  //     bannerApi.list({
-  //       page,
-  //       limit: 20,
-  //     }),
-  // })
+  // Fixed: Properly handle the API response - bannerApi.list returns the data directly
+  const { data: response, isLoading, isFetching, error } = useQuery<BannerListResponse>({
+    queryKey: ['admin', 'banners', page],
+    queryFn: async () => {
+      const result = await bannerApi.list({
+        page,
+        limit: 20,
+      })
+      // The API returns { data: { banners, pagination } }
+      // But bannerApi.list might already unwrap the data
+      // Check the structure and handle accordingly
+      if (result && typeof result === 'object' && 'data' in result) {
+        // If result has a data property, it's wrapped
+        const wrapped = result as { data: BannerListResponse }
+        return wrapped.data
+      }
+      // Otherwise, assume result is already BannerListResponse
+      return result as BannerListResponse
+    },
+  })
 
-  // Transform the response in the queryFn
-const { data: response, isLoading, isFetching, error } = useQuery<BannerListResponse>({
-  queryKey: ['admin', 'banners', page],
-  queryFn: async () => {
-    const result = await bannerApi.list({
-      page,
-      limit: 20,
-    })
-    // Transform the nested data structure
-    return {
-      banners: result.data?.banners ?? [],
-      pagination: result.data?.pagination ?? { page: 1, limit: 20, total: 0, pages: 1 }
-    }
-  },
-})
-
-const banners = response?.banners ?? []
-const pagination = response?.pagination ?? { page: 1, limit: 20, total: 0, pages: 1 }
+  const banners = response?.banners ?? []
+  const pagination = response?.pagination ?? { page: 1, limit: 20, total: 0, pages: 1 }
 
   // Filter banners based on search term, type, and status (client-side)
   const filteredBanners = useMemo(() => {
@@ -401,7 +408,7 @@ const pagination = response?.pagination ?? { page: 1, limit: 20, total: 0, pages
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'banners'] })
 
   const createMutation = useMutation({
-    mutationFn: (data: BannerCreateData) => bannerApi.create(data),
+    mutationFn: (data: BannerPayload) => bannerApi.create(data as BannerCreateData),
     onSuccess: () => {
       toast.success('Banner created')
       closeModal()
@@ -411,7 +418,8 @@ const pagination = response?.pagination ?? { page: 1, limit: 20, total: 0, pages
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<BannerCreateData> }) => bannerApi.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: BannerPayload }) => 
+      bannerApi.update(id, data as Partial<Banner>),
     onSuccess: () => {
       toast.success('Banner updated')
       closeModal()
@@ -457,63 +465,6 @@ const pagination = response?.pagination ?? { page: 1, limit: 20, total: 0, pages
     setFormData(EMPTY_FORM)
   }
 
-  // const generateAIImage = async () => {
-  //   if (!formData.title || !formData.type) {
-  //     toast.error('Title and type are required for AI image generation')
-  //     return false
-  //   }
-
-  //   setFormData(f => ({ ...f, aiImageLoading: true, aiImageError: null, aiImageGenerated: false }))
-
-  //   try {
-  //     const response = await fetch('/api/v1/banners/ai-generate', {
-  //       method: 'POST',
-  //       headers: { 'Content-Type': 'application/json' },
-  //       body: JSON.stringify({
-  //         title: formData.title,
-  //         description: formData.description,
-  //         type: formData.type,
-  //         theme: formData.theme,
-  //       }),
-  //     })
-
-  //     if (!response.ok) {
-  //       throw new Error('Failed to generate AI image')
-  //     }
-
-  //     const data = await response.json()
-      
-  //     if (data.data?.url) {
-  //       setFormData(f => ({
-  //         ...f,
-  //         image: {
-  //           ...f.image,
-  //           url: data.data.url,
-  //           mobileUrl: data.data.url,
-  //           alt: formData.title,
-  //         },
-  //         aiImageLoading: false,
-  //         aiImageError: null,
-  //         aiImageGenerated: true,
-  //       }))
-  //       toast.success('AI image generated successfully')
-  //       return true
-  //     } else {
-  //       throw new Error(data.message || 'No image URL in response')
-  //     }
-  //   } catch (error: any) {
-  //     setFormData(f => ({
-  //       ...f,
-  //       aiImageLoading: false,
-  //       aiImageError: error.message || 'Failed to generate AI image',
-  //     }))
-  //     toast.error('Failed to generate AI image: ' + (error.message || 'Unknown error'))
-  //     return false
-  //   }
-  // }
-
-  
-
   const generateAIImage = async () => {
     if (!formData.title || !formData.type) {
       toast.error('Title and type are required for AI image generation')
@@ -552,7 +503,7 @@ const pagination = response?.pagination ?? { page: 1, limit: 20, total: 0, pages
           image: {
             ...f.image,
             url: data.data.url,
-            mobileUrl: data.data.url,
+            mobileUrl: data.data.mobileUrl || data.data.url,
             alt: formData.title,
           },
           aiImageLoading: false,
@@ -566,10 +517,7 @@ const pagination = response?.pagination ?? { page: 1, limit: 20, total: 0, pages
 
       throw new Error(data?.message || 'No image URL in response')
     } catch (error: any) {
-      const message =
-        error.response?.data?.message ||
-        error.message ||
-        'Failed to generate AI image'
+      const message = error.response?.data?.message || error.message || 'Failed to generate AI image'
 
       setFormData(f => ({
         ...f,
@@ -605,18 +553,12 @@ const pagination = response?.pagination ?? { page: 1, limit: 20, total: 0, pages
         }
       }
 
-      const payload = formStateToPayload(formData) as BannerCreateData
-      
-      // Include AI generation flag
-      const payloadWithAI = {
-        ...payload,
-        useAIImage: formData.useAIImage,
-      }
+      const payload = formStateToPayload(formData)
 
       if (editingBanner) {
-        await updateMutation.mutateAsync({ id: editingBanner._id, data: payloadWithAI })
+        await updateMutation.mutateAsync({ id: editingBanner._id, data: payload })
       } else {
-        await createMutation.mutateAsync(payloadWithAI)
+        await createMutation.mutateAsync(payload)
       }
     } catch (error: any) {
       toast.error(error.message || 'An error occurred')

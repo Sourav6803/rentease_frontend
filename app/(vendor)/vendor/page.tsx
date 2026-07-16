@@ -54,7 +54,7 @@ function PendingVerificationScreen({ vendor, onRefresh }: { vendor: any; onRefre
             <Progress value={completionPercentage} className="h-2 mb-4" />
             <div className="grid gap-2">
               {requiredDocs.map(doc => {
-                const isUploaded = vendor?.verification?.documents?.some(d => d.type === doc.key)
+                const isUploaded = vendor?.verification?.documents?.some((d:any )=> d.type === doc.key)
                 return (
                   <div key={doc.key} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
                     <div className="flex items-center gap-2">
@@ -326,7 +326,8 @@ export default function VendorPage() {
     )
   }
 
-  const status = vendor?.verification?.status
+  // const status = vendor?.verification?.status
+  const status = (vendor as any)?.verification?.status;
 
   // Render based on verification status
   switch (status) {

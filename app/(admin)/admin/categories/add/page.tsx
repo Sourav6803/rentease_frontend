@@ -24,51 +24,29 @@ const categorySchema = z.object({
   name: z.string()
     .min(2, 'Category name must be at least 2 characters')
     .max(50, 'Category name cannot exceed 50 characters'),
-  description: z.string().max(500).optional().default(''),
-  parent: z.string().optional().default(''),
-  level: z.number().int().min(0).max(3).default(0),
-  icon: z.string().optional().default('📁'),
-  iconUrl: z.string().optional().default(''),
-  displayOrder: z.number().int().min(0).default(0),
-  isActive: z.boolean().default(true),
-  isFeatured: z.boolean().default(false),
-  metaTitle: z.string().max(60).optional().default(''),
-  metaDescription: z.string().max(160).optional().default(''),
-  metaKeywords: z.string().optional().default(''),
+  description: z.string().max(500),
+  parent: z.string(),
+  level: z.number().int().min(0).max(3),
+  icon: z.string(),
+  iconUrl: z.string(),
+  displayOrder: z.number().int().min(0),
+  isActive: z.boolean(),
+  isFeatured: z.boolean(),
+  metaTitle: z.string().max(60),
+  metaDescription: z.string().max(160),
+  metaKeywords: z.string(),
   attributes: z.array(z.object({
     id: z.string().optional(),
     name: z.string(),
     type: z.enum(['text', 'number', 'boolean', 'select', 'multiselect']),
     required: z.boolean(),
     filterable: z.boolean(),
-    options: z.array(z.string()).optional().default([]),
-    unit: z.string().optional().default('')
-  })).default([])
+    options: z.array(z.string()),
+    unit: z.string()
+  }))
 })
 
-type CategoryFormValues = {
-  name: string
-  description: string
-  parent: string
-  level: number
-  icon: string
-  iconUrl: string
-  displayOrder: number
-  isActive: boolean
-  isFeatured: boolean
-  metaTitle: string
-  metaDescription: string
-  metaKeywords: string
-  attributes: Array<{
-    id?: string
-    name: string
-    type: 'text' | 'number' | 'boolean' | 'select' | 'multiselect'
-    required: boolean
-    filterable: boolean
-    options: string[]
-    unit: string
-  }>
-}
+type CategoryFormValues = z.infer<typeof categorySchema>
 
 interface Category {
   _id: string
@@ -370,7 +348,7 @@ export default function AddCategoryPage() {
 
   const selectVariation = (url: string) => { setValue('iconUrl', url); setShowVariationModal(false); toast.success('Icon selected!') }
 
-  const onSubmit: SubmitHandler<any> = async (data: any) => {
+  const onSubmit: SubmitHandler<CategoryFormValues> = async (data) => {
     setIsLoading(true)
     try {
       const payload = {
@@ -380,7 +358,7 @@ export default function AddCategoryPage() {
         displayOrder: data.displayOrder, isActive: data.isActive, isFeatured: data.isFeatured,
         meta: {
           title: data.metaTitle, description: data.metaDescription,
-          keywords: data.metaKeywords?.split(',').map((k: any) => k.trim()).filter(Boolean)
+          keywords: data.metaKeywords?.split(',').map(k => k.trim()).filter(Boolean)
         },
         attributes: data.level < 2 ? data.attributes : []
       }

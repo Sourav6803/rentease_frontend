@@ -8,6 +8,13 @@ import { AlertCircle, RefreshCw, Home, ArrowLeft, Bug, WifiOff } from 'lucide-re
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
+// Add this at the top of your file or in a global type declaration file
+declare global {
+    interface Window {
+        gtag?: (...args: any[]) => void;
+    }
+}
+
 // Error types for better categorization
 enum ErrorType {
   NETWORK = 'network',

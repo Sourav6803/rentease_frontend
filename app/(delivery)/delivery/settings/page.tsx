@@ -346,7 +346,7 @@ export default function DeliverySettingsPage() {
   const loadProfile = useCallback(async () => {
     setProfileLoading(true);
     try {
-      const res = await deliveryPartnerApi.getProfile();
+      const res: any = await deliveryPartnerApi.getProfile();
       const p = (res?.data ?? res)?.profile ?? res;
       setProfile(p);
       setIsAvailable(!!p?.availability?.isAvailable);

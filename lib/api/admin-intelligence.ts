@@ -742,13 +742,31 @@ export const bannerApi = {
   },
 
   /** Generate AI banner image using title/description criteria */
+  // generateAIImage: async (data: {
+  //   title: string;
+  //   description?: string;
+  //   type: string;
+  //   theme?: { gradient?: string; textColor?: string; bgColor?: string; accent?: string };
+  // }): Promise<{ success: boolean; url: string; promptUsed?: string; fallback?: boolean; error?: string }> => {
+  //   const response = await apiClient.post<{ success: boolean }>(
+  //     `/api/v1/banners/ai-generate`,
+  //     data
+  //   );
+  //   return response.data;
+  // },
   generateAIImage: async (data: {
     title: string;
     description?: string;
     type: string;
     theme?: { gradient?: string; textColor?: string; bgColor?: string; accent?: string };
   }): Promise<{ success: boolean; url: string; promptUsed?: string; fallback?: boolean; error?: string }> => {
-    const response = await apiClient.post<{ success: boolean }>(
+    const response = await apiClient.post<{ 
+      success: boolean; 
+      url: string; 
+      promptUsed?: string; 
+      fallback?: boolean; 
+      error?: string 
+    }>(
       `/api/v1/banners/ai-generate`,
       data
     );

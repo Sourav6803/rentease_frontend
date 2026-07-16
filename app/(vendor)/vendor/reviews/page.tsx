@@ -61,11 +61,18 @@ function applyClientFilters(reviews: Review[], filters: ReviewFiltersState): Rev
     result = result.filter((r) => r.moderation.status === filters.status)
   }
 
+  // if (filters.reply !== 'all') {
+  //   result = result.filter((r) => {
+  //     const hasReply = r.responses.some((resp) => resp.isVendorResponse)
+  //     return filters.reply === 'replied' ? hasReply : !hasReply
+  //   })
+  // }
+
   if (filters.reply !== 'all') {
     result = result.filter((r) => {
-      const hasReply = r.responses.some((resp) => resp.isVendorResponse)
-      return filters.reply === 'replied' ? hasReply : !hasReply
-    })
+        const hasReply = (r.responses ?? []).some((resp) => resp.isVendorResponse);
+        return filters.reply === 'replied' ? hasReply : !hasReply;
+    });
   }
 
   if (filters.search.trim()) {

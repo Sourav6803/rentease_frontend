@@ -86,7 +86,7 @@ export function useSettings() {
       }
       return null
     } catch (error) {
-      const err = error as AxiosError
+      const err = error as AxiosError<{ message?: string }>
       console.error('Error fetching settings:', err)
       toast.error(err.response?.data?.message || 'Failed to load settings')
       return null
@@ -106,7 +106,7 @@ export function useSettings() {
       }
       return false
     } catch (error) {
-      const err = error as AxiosError
+      const err = error as AxiosError<{ message?: string }>
       console.error(`Error updating ${section}:`, err)
       toast.error(err.response?.data?.message || `Failed to update ${section}`)
       return false
@@ -123,7 +123,7 @@ export function useSettings() {
       toast.success('Password changed successfully')
       return true
     } catch (error) {
-      const err = error as AxiosError
+      const err = error as AxiosError<{ message?: string }>
       console.error('Error changing password:', err)
       toast.error(err.response?.data?.message || 'Failed to change password')
       return false
@@ -139,7 +139,7 @@ export function useSettings() {
       toast.success('Account deleted successfully')
       return true
     } catch (error) {
-      const err = error as AxiosError
+      const err = error as AxiosError<{ message?: string }>
       console.error('Error deleting account:', err)
       toast.error(err.response?.data?.message || 'Failed to delete account')
       return false

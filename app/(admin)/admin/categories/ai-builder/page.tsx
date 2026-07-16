@@ -36,6 +36,7 @@ interface GeneratedCategory {
     estimatedDemand: string
     rentalPriceRange: { min: number; max: number }
     popularBrands: string[]
+    iconSuggestion: string
   }>
   suggestedAttributes: Array<any>
   industryStandards: any

@@ -149,28 +149,51 @@ export default function SchedulePage() {
   }, [historyPage]);
 
   // Save shift changes
-  const saveShiftChanges = useCallback(async () => {
-    setIsSavingShift(true);
-    try {
-      const response = await updateProfile({
-        availability: {
-          shifts: {
-            start: shiftForm.start,
-            end: shiftForm.end,
-            workingDays: shiftForm.workingDays,
-          },
-        },
-      });
+  // const saveShiftChanges = useCallback(async () => {
+  //   setIsSavingShift(true);
+  //   try {
+  //     const response = await updateProfile({
+  //       availability: {
+  //         shifts: {
+  //           start: shiftForm.start,
+  //           end: shiftForm.end,
+  //           workingDays: shiftForm.workingDays,
+  //         },
+  //       },
+  //     });
       
-      if (response ) {
-        toast.success('Shift Updated. Your work schedule has been saved');
-        await refresh();
+  //     if (response ) {
+  //       toast.success('Shift Updated. Your work schedule has been saved');
+  //       await refresh();
+  //     }
+  //   } catch (error: any) {
+  //       toast.error('Update Failed. Unable to update shift schedule' + error.message);
+  //   } finally {
+  //     setIsSavingShift(false);
+  //   }
+  // }, [shiftForm, updateProfile, refresh, toast]);
+
+  const saveShiftChanges = useCallback(async () => {
+      setIsSavingShift(true);
+      try {
+          await updateProfile({
+              availability: {
+                  shifts: {
+                      start: shiftForm.start,
+                      end: shiftForm.end,
+                      workingDays: shiftForm.workingDays,
+                  },
+              },
+          });
+          
+          // If we get here, the update was successful
+          toast.success('Shift Updated. Your work schedule has been saved');
+          await refresh();
+      } catch (error: any) {
+          toast.error('Update Failed. Unable to update shift schedule: ' + error.message);
+      } finally {
+          setIsSavingShift(false);
       }
-    } catch (error: any) {
-        toast.error('Update Failed. Unable to update shift schedule' + error.message);
-    } finally {
-      setIsSavingShift(false);
-    }
   }, [shiftForm, updateProfile, refresh, toast]);
 
   // Toggle working day
@@ -247,20 +270,24 @@ export default function SchedulePage() {
         pincode
       );
       
+      // if (response.success && response.data?.slots) {
+      //   setRescheduleDialog(prev => ({
+      //     ...prev,
+      //     slots: response.data.slots,
+      //     loading: false,
+      //   }));
+      // }
+
       if (response.success && response.data?.slots) {
-        setRescheduleDialog(prev => ({
-          ...prev,
-          slots: response.data.slots,
-          loading: false,
-        }));
+          setRescheduleDialog(prev => ({
+              ...prev,
+              slots: response.data!.slots, // Use non-null assertion
+              loading: false,
+          }));
       }
     } catch (error: any) {
       console.error('Failed to load slots:', error);
-      toast({
-        title: 'Error',
-        description: 'Unable to load available time slots',
-        variant: 'destructive',
-      });
+      toast.error('Unable to load available time slots');
       setRescheduleDialog(prev => ({ ...prev, loading: false }));
     }
   }, [rescheduleDialog.delivery, toast]);
@@ -268,11 +295,7 @@ export default function SchedulePage() {
   // Submit reschedule request
   const submitReschedule = useCallback(async () => {
     if (!rescheduleDialog.delivery || !rescheduleDialog.selectedDate || !rescheduleDialog.selectedSlot || !rescheduleDialog.reason) {
-      toast({
-        title: 'Missing Information',
-        description: 'Please fill all required fields',
-        variant: 'destructive',
-      });
+      toast.info('Please fill all required fields');
       return;
     }
     
@@ -288,19 +311,12 @@ export default function SchedulePage() {
       );
       
       if (response.success) {
-        toast({
-          title: 'Rescheduled Successfully',
-          description: `Delivery has been rescheduled to ${format(rescheduleDialog.selectedDate, 'MMM dd')} at ${rescheduleDialog.selectedSlot.label}`,
-        });
+        toast(`Delivery has been rescheduled to ${format(rescheduleDialog.selectedDate, 'MMM dd')} at ${rescheduleDialog.selectedSlot.label}`);
         setRescheduleDialog(prev => ({ ...prev, delivery: null, step: 1, selectedDate: undefined, selectedSlot: null, reason: '' }));
         await refresh();
       }
     } catch (error: any) {
-      toast({
-        title: 'Reschedule Failed',
-        description: error.message || 'Unable to reschedule delivery',
-        variant: 'destructive',
-      });
+      toast.error(error.message || 'Unable to reschedule delivery');
     } finally {
       setRescheduleDialog(prev => ({ ...prev, loading: false }));
     }
@@ -732,7 +748,14 @@ export default function SchedulePage() {
                     <div className="flex items-center justify-between text-sm mb-4">
                       <span className="text-gray-600">Weekly Hours:</span>
                       <span className="font-semibold">
-                        {shiftForm.workingDays.length * parseInt(shiftForm.end.split(':')[0] - parseInt(shiftForm.start.split(':')[0]))} hours/week
+                        {/* {shiftForm.workingDays.length * parseInt(shiftForm.end.split(':')[0] - parseInt(shiftForm.start.split(':')[0]))} hours/week */}
+                        {
+                          shiftForm.workingDays.length *
+                          (
+                            parseInt(shiftForm.end.split(':')[0], 10) -
+                            parseInt(shiftForm.start.split(':')[0], 10)
+                          )
+                        } hours/week
                       </span>
                     </div>
                     <Button

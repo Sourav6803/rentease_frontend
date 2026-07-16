@@ -25,7 +25,7 @@ export default function VehiclePage() {
 
   // Snapshot of last saved values for dirty detection
   const [saved, setSaved] = useState({
-    vType: 'bike', vNumber: '', vModel: '', zone: 'north' as ZoneType, maxConcurrent: '5',
+    vType: 'bike' as VehicleType, vNumber: '', vModel: '', zone: 'north' as ZoneType, maxConcurrent: '5',
   });
 
   useEffect(() => {

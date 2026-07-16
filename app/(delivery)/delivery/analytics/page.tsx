@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useDeliveryPartner } from '@/contexts/DeliveryPartnerContext';
-import { deliveryPartnerApi, type EarningsBreakdownItem } from '@/lib/api/delivery';
+import { deliveryPartnerApi, type ActivityItem, type EarningsBreakdownItem } from '@/lib/api/delivery';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { Button } from '@/components/ui/button';
@@ -61,17 +61,6 @@ interface EarningsData {
   total: number;
   currency: string;
   breakdown: EarningsBreakdownItem[];
-}
-
-interface ActivityItem {
-  id: string;
-  action: string;
-  customer: string;
-  time: string;
-  earnings?: number;
-  rating?: number;
-  status: 'success' | 'pending' | 'warning' | 'failed' | 'cancelled';
-  deliveryNumber: string;
 }
 
 // Container animation variants

@@ -28,8 +28,9 @@ import {
   ChartCard,
   DataTable,
   ExportButton,
+  type DataTableColumn,
 } from '@/components/admin/intelligence'
-import type { DataTableColumn, KpiCardItem, ProductIntelligence, ProductRow } from '@/types/admin-intelligence.types'
+import type { KpiCardItem, ProductIntelligence, ProductRow } from '@/types/admin-intelligence.types'
 import { useIntelligencePeriod } from '@/hooks/useIntelligencePeriod'
 import { productName, productViews } from '@/lib/intelligence/product-helpers'
 
@@ -102,7 +103,7 @@ export default function IntelligenceProductsPage() {
       key: 'views',
       header: 'Views',
       sortable: true,
-      accessor: (r) => productViews(r as Record<string, unknown>),
+      accessor: (r) => productViews(r),
     },
     {
       key: 'rentals',
@@ -130,7 +131,7 @@ export default function IntelligenceProductsPage() {
 
   const issueColumns: DataTableColumn<ProductRow>[] = [
     { key: 'name', header: 'Product', accessor: (r) => productName(r) },
-    { key: 'views', header: 'Views', accessor: (r) => productViews(r as Record<string, unknown>) },
+    { key: 'views', header: 'Views', accessor: (r) => productViews(r) },
     { key: 'rentals', header: 'Rentals', accessor: (r) => r.rentalCount ?? 0 },
   ]
 
@@ -144,7 +145,7 @@ export default function IntelligenceProductsPage() {
 
   const exportRows = (data.mostRented ?? []).map((p) => ({
     name: productName(p),
-    views: productViews(p as Record<string, unknown>),
+    views: productViews(p),
     rentals: p.rentalCount ?? 0,
     revenue: p.revenue ?? 0,
   }))

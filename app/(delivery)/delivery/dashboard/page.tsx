@@ -113,6 +113,7 @@ function DeliveryCard({
     high: { color: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300', icon: Zap },
     medium: { color: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300', icon: Clock },
     low: { color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300', icon: CheckCircle },
+    urgent: { color: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300', icon: CircleAlert },
   }
   const cfg = priorityConfig[delivery.priority] ?? priorityConfig.medium
   const PriorityIcon = cfg.icon
@@ -193,6 +194,8 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
     success: { icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-100 dark:bg-emerald-950/40' },
     pending: { icon: Clock, color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-950/40' },
     warning: { icon: CircleAlert, color: 'text-orange-600', bg: 'bg-orange-100 dark:bg-orange-950/40' },
+    failed: { icon: CircleAlert, color: 'text-red-600', bg: 'bg-red-100 dark:bg-red-950/40' },
+    cancelled: { icon: CircleAlert, color: 'text-gray-600', bg: 'bg-gray-100 dark:bg-gray-900/40' },
   }
   const cfg = statusConfig[activity.status]
   const StatusIcon = cfg.icon
