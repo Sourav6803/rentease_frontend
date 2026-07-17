@@ -13,7 +13,8 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { useState } from 'react'
 import { useToast } from '@/hooks/useToast'
-import type { InventoryItem } from './VendorInventory'
+import { InventoryItem } from '../VendorInventory'
+// import type { InventoryItem } from './VendorInventory'
 
 interface StockAdjustModalProps {
   open: boolean

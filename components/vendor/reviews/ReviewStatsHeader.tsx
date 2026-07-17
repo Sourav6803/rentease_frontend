@@ -13,7 +13,10 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { StarRating } from './StarRating'
 import { MessageSquareReply, MessagesSquare, ShieldAlert, Star } from 'lucide-react'
-import type { RatingDistribution } from '@/app/(vendor)/vendor/reviews/types'
+// import type { RatingDistribution } from '@/types/reviews.types'
+// import { cn } from '@/lib/utils'
+// import { RatingDistribution } from '@/lib/api/reviews'
+import { RatingDistribution } from '@/types/reviews.types'
 import { cn } from '@/lib/utils'
 
 interface ReviewStatsHeaderProps {

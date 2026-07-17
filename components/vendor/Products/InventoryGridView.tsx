@@ -35,10 +35,10 @@ export function InventoryGridView({
 }: InventoryGridViewProps) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 p-5">
-      {items.map((item, index) => {
+      {items.map((item:any, index:number) => {
         const statusConfig = getStatusConfig(item.status)
         const conditionConfig = getConditionConfig(item.condition.status)
-        const primaryImage = item.product.media.images?.find(img => img.isPrimary) || item.product.media.images?.[0]
+        const primaryImage = item.product.media.images?.find((img:any) => img.isPrimary) || item.product.media.images?.[0]
         const isLowStock = item.product?.inventory?.availableQuantity < 5
         
         return (

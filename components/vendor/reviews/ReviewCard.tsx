@@ -40,8 +40,9 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { personName } from '@/lib/api/reviews'
 import { StarRating } from './StarRating'
 import { ReplyDialog } from './ReplyDialog'
-import type { ModerationStatus, Review } from '@/app/(vendor)/vendor/reviews/types'
+// import type { ModerationStatus, Review } from '@/app/(vendor)/vendor/reviews/types'
 import { cn } from '@/lib/utils'
+import { Review, ModerationStatus } from '@/types/reviews.types'
 
 interface ReviewCardProps {
   review: Review
@@ -76,7 +77,7 @@ export function ReviewCard({ review, vendorName, vendorAvatar, onReply, isReplyi
   const product = typeof review.product === 'object' ? review.product : null
   const rental = typeof review.rental === 'object' ? review.rental : null
 
-  const vendorReply = review.responses.find((r) => r.isVendorResponse)
+  const vendorReply = review.responses?.find((r) => r.isVendorResponse)
   const hasVendorReply = Boolean(vendorReply)
 
   const createdDate = new Date(review.createdAt)

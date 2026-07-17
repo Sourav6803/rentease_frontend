@@ -65,6 +65,11 @@ export interface PopulatedVendor {
   business?: { name?: string };
 }
 
+export interface PopulatedRental {
+  _id: string;
+  rentalNumber?: string;
+}
+
 export interface ReportedReason {
   user: string;
   reason: string;
@@ -90,6 +95,7 @@ export interface Review {
   user: Person;
   product: string | PopulatedProduct;
   vendor: string | PopulatedVendor;
+  rental?: string | PopulatedRental;
   ratings: {
     overall: number;
     product?: Record<string, number>;
@@ -102,6 +108,7 @@ export interface Review {
   cons?: string[];
   attachments?: ReviewAttachment[];
   helpful: { count: number };
+  helpfulPercentage?: number;
   reported?: {
     count: number;
     reasons?: ReportedReason[];

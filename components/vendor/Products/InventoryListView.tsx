@@ -36,10 +36,10 @@ export function InventoryListView({
 }: InventoryListViewProps) {
   return (
     <div className="space-y-3 p-4">
-      {items.map((item, index) => {
+      {items.map((item:any, index:number) => {
         const statusConfig = getStatusConfig(item.status)
         const conditionConfig = getConditionConfig(item.condition.status)
-        const primaryImage = item.product.media.images?.find(img => img.isPrimary) || item.product.media.images?.[0]
+        const primaryImage = item.product.media.images?.find((img:any) => img.isPrimary) || item.product.media.images?.[0]
         const isLowStock = item.product.inventory?.availableQuantity < 5
         
         return (

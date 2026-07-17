@@ -11,7 +11,8 @@ import { motion } from 'framer-motion'
 import { Star } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import type { RatingDistribution, StarFilter } from '@/app/(vendor)/vendor/reviews/types'
+import { RatingDistribution, StarFilter } from '@/types/reviews.types'
+// import type { RatingDistribution, StarFilter } from '@/app/(vendor)/vendor/reviews/types'
 
 interface RatingDistributionBarProps {
   distribution: RatingDistribution

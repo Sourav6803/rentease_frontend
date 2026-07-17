@@ -70,7 +70,7 @@ function StripeCardForm({
   paymentIntentId: string
   clientSecret: string
   paymentId: string
-  onSuccess: (paymentId: string, paymentNumber?: string) => void
+  onSuccess: (paymentId: string, paymentNumber: string) => void
   onError: (error: string) => void
 }) {
   const stripe = useStripe()
@@ -187,7 +187,7 @@ export function PaymentGateway({
         status: 'ready',
         paymentId: result.payment._id,
         gatewayOrder: result.gatewayOrder,
-        clientSecret: result.gatewayOrder.clientSecret
+        clientSecret: 'clientSecret' in result.gatewayOrder ? result.gatewayOrder.clientSecret : undefined
       })
     } catch (error) {
       setPaymentState({ status: 'idle' })
@@ -229,7 +229,7 @@ export function PaymentGateway({
       prefill: {
         name: session?.user?.name,
         email: session?.user?.email,
-        contact: session?.user?.phone,
+        contact: (session?.user as { phone?: string } | undefined)?.phone,
       },
       theme: {
         color: '#4f46e5',
