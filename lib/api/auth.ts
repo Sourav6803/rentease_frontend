@@ -43,6 +43,16 @@ async function postJson<TResponse, TPayload>(
   return data
 }
 
+export interface ForgotPasswordPayload {
+  email: string
+}
+
+export interface ResetPasswordPayload {
+  token: string
+  password: string
+  confirmPassword: string
+}
+
 export const authApi = {
   login: (payload: LoginPayload) =>
     postJson<{ user: unknown; roleData: unknown; tokens: unknown }, LoginPayload>(
@@ -55,5 +65,11 @@ export const authApi = {
       '/api/v1/auth/register',
       payload
     ),
+
+  forgotPassword: (payload: ForgotPasswordPayload) =>
+    postJson<undefined, ForgotPasswordPayload>('/api/v1/auth/forgot-password', payload),
+
+  resetPassword: (payload: ResetPasswordPayload) =>
+    postJson<undefined, ResetPasswordPayload>('/api/v1/auth/reset-password', payload),
 }
 

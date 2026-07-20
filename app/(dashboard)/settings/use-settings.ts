@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import axios, { AxiosError } from 'axios'
 import { useToast } from '@/hooks/useToast'
@@ -71,12 +72,13 @@ interface SettingsState {
 export function useSettings() {
   const { data: session } = useSession()
   const toast = useToast()
+  const accessToken = session?.user?.accessToken
 
-  const getAuthHeader = () => ({
-    Authorization: `Bearer ${session?.user?.accessToken}`
-  })
+  const getAuthHeader = useCallback(() => ({
+    Authorization: `Bearer ${accessToken}`
+  }), [accessToken])
 
-  const fetchSettings = async (): Promise<SettingsState | null> => {
+  const fetchSettings = useCallback(async (): Promise<SettingsState | null> => {
     try {
       const response = await axios.get(`${BASE_URL}/api/v1/settings`, {
         headers: getAuthHeader()
@@ -91,9 +93,9 @@ export function useSettings() {
       toast.error(err.response?.data?.message || 'Failed to load settings')
       return null
     }
-  }
+  }, [getAuthHeader, toast])
 
-  const updateSection = async <T,>(section: string, data: T): Promise<boolean> => {
+  const updateSection = useCallback(async <T,>(section: string, data: T): Promise<boolean> => {
     try {
       const response = await axios.put(
         `${BASE_URL}/api/v1/settings/${section}`,
@@ -111,9 +113,9 @@ export function useSettings() {
       toast.error(err.response?.data?.message || `Failed to update ${section}`)
       return false
     }
-  }
+  }, [getAuthHeader, toast])
 
-  const changePassword = async (currentPassword: string, newPassword: string): Promise<boolean> => {
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string): Promise<boolean> => {
     try {
       await axios.post(
         `${BASE_URL}/api/v1/settings/change-password`,
@@ -128,9 +130,9 @@ export function useSettings() {
       toast.error(err.response?.data?.message || 'Failed to change password')
       return false
     }
-  }
+  }, [getAuthHeader, toast])
 
-  const deleteAccount = async (confirmText: string): Promise<boolean> => {
+  const deleteAccount = useCallback(async (confirmText: string): Promise<boolean> => {
     try {
       await axios.delete(`${BASE_URL}/api/v1/settings/account`, {
         headers: getAuthHeader(),
@@ -144,9 +146,9 @@ export function useSettings() {
       toast.error(err.response?.data?.message || 'Failed to delete account')
       return false
     }
-  }
+  }, [getAuthHeader, toast])
 
-  const fetchPaymentMethods = async (): Promise<PaymentMethod[]> => {
+  const fetchPaymentMethods = useCallback(async (): Promise<PaymentMethod[]> => {
     try {
       const response = await axios.get(`${BASE_URL}/api/v1/payments/methods`, {
         headers: getAuthHeader()
@@ -159,7 +161,7 @@ export function useSettings() {
       console.error('Error fetching payment methods:', error)
       return []
     }
-  }
+  }, [getAuthHeader])
 
   return {
     fetchSettings,
