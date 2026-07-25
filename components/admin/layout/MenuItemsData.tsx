@@ -195,31 +195,31 @@ const menuItems = {
           icon: Plus,
           description: 'Create new category'
         },
-        { 
-          name: 'AI Category Builder', 
-          href: '/admin/categories/ai-builder', 
-          icon: Sparkles,
-          badge: 'New',
-          description: 'AI-powered category creation'
-        },
-        { 
-          name: 'Category Attributes', 
-          href: '/admin/categories/attributes', 
-          icon: Tag,
-          description: 'Manage product attributes'
-        },
-        { 
-          name: 'Category Hierarchy', 
-          href: '/admin/categories/hierarchy', 
-          icon: Layers,
-          description: 'Organize category structure'
-        },
-        { 
-          name: 'Bulk Import/Export', 
-          href: '/admin/categories/import-export', 
-          icon: DownloadCloud,
-          description: 'Import/export categories'
-        },
+        // { 
+        //   name: 'AI Category Builder', 
+        //   href: '/admin/categories/ai-builder', 
+        //   icon: Sparkles,
+        //   badge: 'New',
+        //   description: 'AI-powered category creation'
+        // },
+        // { 
+        //   name: 'Category Attributes', 
+        //   href: '/admin/categories/attributes', 
+        //   icon: Tag,
+        //   description: 'Manage product attributes'
+        // },
+        // { 
+        //   name: 'Category Hierarchy', 
+        //   href: '/admin/categories/hierarchy', 
+        //   icon: Layers,
+        //   description: 'Organize category structure'
+        // },
+        // { 
+        //   name: 'Bulk Import/Export', 
+        //   href: '/admin/categories/import-export', 
+        //   icon: DownloadCloud,
+        //   description: 'Import/export categories'
+        // },
       ],
     },
 

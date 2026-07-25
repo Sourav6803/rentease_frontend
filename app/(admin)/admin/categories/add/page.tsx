@@ -289,6 +289,9 @@ export default function AddCategoryPage() {
 
       if (response.data.success && response.data.data) {
         const aiData = response.data.data.data;
+        console.log("Current Level:", currentLevel);
+        console.log("AI Data:", aiData);
+        
         if (aiData.mainCategory) {
           if (aiData.mainCategory.description)
             setValue("description", aiData.mainCategory.description);
@@ -302,11 +305,12 @@ export default function AddCategoryPage() {
         if (
           currentLevel >= 1 &&
           currentLevel <= 2 &&
-          aiData.suggestedAttributes?.length
+          aiData.attributes?.length
         ) {
+          console.log("Adding AI attributes:", );
           setValue(
             "attributes",
-            aiData.suggestedAttributes.map((attr: any, i: number) => ({
+            aiData.attributes.map((attr: any, i: number) => ({
               id: String(Date.now() + i),
               name: attr.name,
               type: attr.type || "text",
@@ -361,6 +365,7 @@ export default function AddCategoryPage() {
 
   const onSubmit: SubmitHandler<CategoryFormValues> = async (data) => {
     setIsLoading(true)
+    console.log("attributes before save:", data.attributes)
     try {
       const payload = {
         name: data.name, description: data.description,
@@ -371,7 +376,7 @@ export default function AddCategoryPage() {
           title: data.metaTitle, description: data.metaDescription,
           keywords: data.metaKeywords?.split(',').map(k => k.trim()).filter(Boolean)
         },
-        attributes: data.level < 2 ? data.attributes : []
+        attributes: data.level >= 1 && data.level <= 2 ? data.attributes : []
       }
       const response = await axios.post(`${BASE_URL}/api/v1/categories`, payload ,  {
         headers: {
@@ -743,7 +748,7 @@ export default function AddCategoryPage() {
               <AttributesSection
                 attributes={formValues.attributes}
                 setValue={setValue}
-                disabled={selectedLevel === 0 || selectedLevel >= 2}
+                disabled={selectedLevel === 0 || selectedLevel >= 3}
                 selectedLevel={selectedLevel}
               />
             )}
