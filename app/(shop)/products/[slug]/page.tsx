@@ -1042,7 +1042,7 @@ export default function ProductDetailsPage() {
             )}
           </div>
 
-          <h1 className="text-3xl font-extrabold text-slate-900 leading-tight mb-2">{product.basicInfo.name}</h1>
+          <h1 className="sm:text-3xl text-xl font-extrabold text-slate-900 leading-tight mb-2">{product.basicInfo.name}</h1>
 
           <div className="flex items-center gap-3 mb-5 flex-wrap">
             <StarRating rating={product.ratings.average} size={16} showText count={product.ratings.count} />
@@ -1054,7 +1054,7 @@ export default function ProductDetailsPage() {
 
           <div className="pb-5 border-b border-slate-100 mb-5">
             <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-extrabold text-blue-700">₹{formatINR(product.pricing.monthlyRent)}</span>
+              <span className="sm:text-4xl text-xl font-extrabold text-blue-700">₹{formatINR(product.pricing.monthlyRent)}</span>
               <span className="text-base text-slate-500">/month</span>
             </div>
             <div className="flex flex-wrap items-center gap-4 mt-2">

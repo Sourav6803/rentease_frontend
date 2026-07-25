@@ -229,7 +229,6 @@ const isPublicPath = (path: string): boolean => {
     '/terms',
     '/firebase-messaging-sw.js',
     '/products',
-    '/products/slug',
     '/categories',
     '/categories/${slug}',
     '/how-it-works',
@@ -237,7 +236,20 @@ const isPublicPath = (path: string): boolean => {
     '/cart'
   ]
 
+  const publicPrefixes = [
+    '/products/',
+    '/categories/',
+  ]
+
   if (publicRoutes.includes(path)) return true
+
+  if (publicPrefixes.some(prefix => path.startsWith(prefix))) {
+  return true
+}
+
+  // Dynamic public routes
+  if (path.startsWith('/products/')) return true
+  if (path.startsWith('/categories/')) return true
 
   if (isDeliveryAuthPath(path)) return true
 

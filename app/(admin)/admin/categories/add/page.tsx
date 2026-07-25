@@ -278,6 +278,11 @@ export default function AddCategoryPage() {
           parentCategory: parentCategoryName,
           level: currentLevel, // ← ADD THIS LINE
         },
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
       );
 
       setAiProgress(80);
@@ -333,7 +338,13 @@ export default function AddCategoryPage() {
     try {
       const response = await axios.post(`${BASE_URL}/api/v1/admin/ai-category/generate-icon-variations`, {
         categoryName: name, description: getValues('description') || '', count: 4
-      })
+      }, 
+      {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+    )
       if (response.data.success && response.data.variations) {
         setIconVariations(response.data.variations)
         setShowVariationModal(true)

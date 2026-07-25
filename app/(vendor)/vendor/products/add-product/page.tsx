@@ -464,7 +464,7 @@ export default function AddProductPage() {
   }
 }
 
-  const onSubmit = async (data: ProductFormValues) => {
+  const onsubmit = async (data: ProductFormValues) => {
     console.log('Form data to submit:', data)
     setIsLoading(true)
     try {
@@ -945,17 +945,14 @@ export default function AddProductPage() {
   }
 
   const progress = Math.round(((completedSteps.size) / STEPS.length) * 100)
-
-  console.log("isLoading-->", isLoading)
   
-
   return (
     <div className="min-h-screen bg-[#f1f3f6]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
 
       {showSuccess && (
         <SuccessModal
-          onViewProducts={() => router.push('/vendor/products')}
+          onViewProducts={() => router.push('/vendor/products/all-products')}
           onAddAnother={() => { setShowSuccess(false); setCurrentStep(0); window.location.reload() }}
         />
       )}
@@ -1025,7 +1022,7 @@ export default function AddProductPage() {
 
           {/* Center: Form */}
           <div className="flex-1 min-w-0">
-            <form onSubmit={handleSubmit(onSubmit)}>
+            <form onSubmit={handleSubmit(onsubmit)}>
               {/* Mobile step indicator */}
               <div className="md:hidden bg-white rounded-2xl shadow-sm border border-slate-200/60 p-3 mb-4">
                 <div className="flex overflow-x-auto gap-2 pb-1">
