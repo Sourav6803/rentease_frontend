@@ -195,6 +195,12 @@ const menuItems = {
           icon: Plus,
           description: 'Create new category'
         },
+        { 
+          name: 'Category Analytics', 
+          href: '/admin/categories/analytics', 
+          icon: BarChart3,
+          description: 'View category performance metrics'
+        },
         // { 
         //   name: 'AI Category Builder', 
         //   href: '/admin/categories/ai-builder', 
@@ -275,55 +281,55 @@ const menuItems = {
     },
 
     // ==================== DELIVERY MANAGEMENT ====================
-{
-  name: 'Delivery',
-  icon: Truck,
-  description: 'Manage delivery operations',
-  children: [
     {
-      name: 'Overview',
-      href: '/admin/delivery',
-      icon: LayoutDashboard,
-      description: 'Delivery management dashboard'
+      name: 'Delivery',
+      icon: Truck,
+      description: 'Manage delivery operations',
+      children: [
+        {
+          name: 'Overview',
+          href: '/admin/delivery',
+          icon: LayoutDashboard,
+          description: 'Delivery management dashboard'
+        },
+        {
+          name: 'Delivery Personnel',
+          href: '/admin/delivery/personnel',
+          icon: Bike,
+          description: 'Manage delivery agents'
+        },
+        {
+          name: 'Create Personnel',
+          href: '/admin/delivery/personnel/create',
+          icon: UserCog,
+          description: 'Add new delivery person'
+        },
+        {
+          name: 'Teams',
+          href: '/admin/delivery/teams',
+          icon: Users,
+          description: 'Manage delivery teams'
+        },
+        {
+          name: 'Create Team',
+          href: '/admin/delivery/teams/create',
+          icon: Plus,
+          description: 'Create new delivery team'
+        },
+        {
+          name: 'Assignments',
+          href: '/admin/delivery/assignments',
+          icon: Route,
+          description: 'Manage delivery assignments'
+        },
+        {
+          name: 'Analytics',
+          href: '/admin/delivery/analytics',
+          icon: TrendingUp,
+          description: 'Delivery performance analytics'
+        },
+      ],
     },
-    {
-      name: 'Delivery Personnel',
-      href: '/admin/delivery/personnel',
-      icon: Bike,
-      description: 'Manage delivery agents'
-    },
-    {
-      name: 'Create Personnel',
-      href: '/admin/delivery/personnel/create',
-      icon: UserCog,
-      description: 'Add new delivery person'
-    },
-    {
-      name: 'Teams',
-      href: '/admin/delivery/teams',
-      icon: Users,
-      description: 'Manage delivery teams'
-    },
-    {
-      name: 'Create Team',
-      href: '/admin/delivery/teams/create',
-      icon: Plus,
-      description: 'Create new delivery team'
-    },
-    {
-      name: 'Assignments',
-      href: '/admin/delivery/assignments',
-      icon: Route,
-      description: 'Manage delivery assignments'
-    },
-    {
-      name: 'Analytics',
-      href: '/admin/delivery/analytics',
-      icon: TrendingUp,
-      description: 'Delivery performance analytics'
-    },
-  ],
-},
 
     // ==================== PAYMENT MANAGEMENT ====================
     {

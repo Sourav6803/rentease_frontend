@@ -305,14 +305,15 @@ export default function CategoriesPage() {
                 label="Edit"
                 color={FK_BLUE}
                 bg="#E8F0FE"
-                onClick={() => router.push(`/admin/categories/edit/${cat._id}`)}
+                onClick={() => router.push(`/admin/categories/${cat._id}/edit`)}
               />
               <ActionBtn
                 icon={cat.isActive ? <EyeOff style={{ width: 13, height: 13 }} /> : <Eye style={{ width: 13, height: 13 }} />}
                 label={cat.isActive ? 'Deactivate' : 'Activate'}
                 color={FK_ORANGE}
                 bg="#FFF3E0"
-                onClick={() => toggleStatus(cat)}
+                // onClick={() => toggleStatus(cat)}
+                onClick={() => router.push(`/admin/categories/${cat._id}`)}
               />
 
               {/* 3-dot menu */}
@@ -825,8 +826,6 @@ function ToolbarBtn({ label, onClick }: { label: string; onClick: () => void }) 
 }
 
 
-
-// const FK_RED = '#FF6161'
 
 
 
