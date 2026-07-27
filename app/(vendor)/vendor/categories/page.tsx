@@ -802,16 +802,47 @@ export default function CategoriesPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
             {/* Quick add CTA */}
-            <div style={{ background: `linear-gradient(135deg, ${FK_BLUE}, #1557B0)`, borderRadius: 4, padding: 16, color: '#fff' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>🚀 Create New Category</div>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                Add parent or leaf categories and link them to your products instantly.
-              </p>
-              <button
-                onClick={() => router.push('/admin/categories/add')}
-                style={{ width: '100%', backgroundColor: FK_ORANGE, color: '#fff', border: 'none', borderRadius: 4, padding: '9px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            
+
+            <div
+              style={{
+                background: `linear-gradient(135deg, ${FK_BLUE}, #1557B0)`,
+                borderRadius: 4,
+                padding: 16,
+                color: "#fff",
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>
+                📂 Browse Product Categories
+              </div>
+
+              <p
+                style={{
+                  fontSize: 11,
+                  color: "rgba(255,255,255,0.85)",
+                  margin: "0 0 12px",
+                  lineHeight: 1.5,
+                }}
               >
-                <Plus style={{ width: 14, height: 14 }} /> Add Category
+                Explore available categories to list your products faster and reach the
+                right customers.
+              </p>
+
+              <button
+                onClick={() => router.push("/vendor/products/add-product")}
+                style={{
+                  width: "100%",
+                  backgroundColor: FK_ORANGE,
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 4,
+                  padding: "9px 0",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                List a Product
               </button>
             </div>
 

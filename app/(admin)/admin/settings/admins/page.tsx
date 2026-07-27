@@ -217,7 +217,7 @@ export default function AdminsPage() {
     // No h-screen / no vertical overflow set here — the admin <main> shell is the
     // only element that should own a scrollbar. overflow-x-hidden guards against
     // the gradient blobs / wide table pushing width and creating a second bar.
-    <div className="w-full max-w-full space-y-6 px-1 pb-2 sm:px-0">
+    <div className="w-full max-w-full overflow-x-hidden space-y-6 px-1 pb-2 sm:px-0">
       {/* Hero header */}
       <div className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-6 sm:p-7">
         <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-gradient-to-br from-blue-400/20 to-indigo-500/20 blur-3xl" />

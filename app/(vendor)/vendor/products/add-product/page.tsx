@@ -2,28 +2,22 @@
 
 'use client'
 
-import { useState, useEffect, useCallback, useRef, JSX } from 'react'
+import { useState, useEffect, JSX } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Package, Upload, Image as ImageIcon, Video, FileText,
-  ChevronRight, ChevronLeft, Save, Plus, Trash2,
-  X, Loader2, CheckCircle, AlertCircle, Info,
-  Play, Camera, DollarSign, Truck, Shield, Clock, Star, Tag,
-  Layers, Search, ChevronDown, ChevronUp, Sparkles,
+  Package, Image as ImageIcon,  FileText,
+  ChevronRight, ChevronLeft,  Plus, Trash2,
+  X, Loader2, CheckCircle, Camera, DollarSign, Truck, Shield,  Tag,
+  Layers, Search, ChevronDown,  Sparkles,
   BadgeCheck, TrendingUp, Users, Award, Zap, Eye,
-  BarChart3, Globe, Lock, RefreshCw, ArrowRight, Box,
+  BarChart3, Globe, Lock, ArrowRight, Box,
   Percent, MapPin, ListChecks, ImagePlus, LayoutGrid, BookOpen
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -379,90 +373,69 @@ export default function AddProductPage() {
     setValue('attributes', defaults)
   }, [fv.category, categories, setValue])
 
-  // const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  //   const files = Array.from(e.target.files || [])
-  //   if (uploadedImages.length + files.length > 10) { toast.error('Maximum 10 images allowed'); return }
-  //   setIsUploading(true); setUploadProgress(0)
-  //   const fd = new FormData()
-  //   files.forEach(f => fd.append('images', f))
-  //   try {
-  //     const res = await axios.post(`${BASE_URL}/api/v1/vendor/products/upload-images`, fd, {
-  //       headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${accessToken}` },
-  //       onUploadProgress: pe => pe.total && setUploadProgress((pe.loaded / pe.total) * 100),
-  //     })
-  //     if (res.data.success) {
-  //       const newImgs = res.data.images.map((img: any, i: number) => ({
-  //         url: img.url, thumbnail: img.thumbnail, isPrimary: uploadedImages.length === 0 && i === 0,
-  //       }))
-  //       const all = [...uploadedImages, ...newImgs]
-  //       setUploadedImages(all); setValue('media.images', all)
-  //       toast.success(`${files.length} image(s) uploaded`)
-  //     }
-  //   } catch { toast.error('Upload failed') }
-  //   finally { setIsUploading(false); setUploadProgress(0) }
-  // }
+  
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const files = Array.from(e.target.files || [])
-  if (uploadedImages.length + files.length > 10) {
-    toast.error('Maximum 10 images allowed')
-    return
-  }
-  
-  setIsUploading(true)
-  setUploadProgress(0)
-  
-  const fd = new FormData()
-  files.forEach(f => fd.append('images', f))
-  
-  try {
-    const res = await axios.post(`${BASE_URL}/api/v1/vendor/products/upload-images`, fd, {
-      headers: { 
-        'Content-Type': 'multipart/form-data', 
-        'Authorization': `Bearer ${accessToken}`
-      },
-      onUploadProgress: (pe) => {
-        if (pe.total) {
-          setUploadProgress((pe.loaded / pe.total) * 100)
-        }
-      },
-    })
-    
-    console.log("Upload response:", res.data) // Debug log
-    
-    // 🔥 FIX: Check both response structures
-    if (res.data.success) {
-      // Handle both possible response structures
-      let uploadedImagesData = res.data.data?.images || res.data.images
-      
-      if (!uploadedImagesData || uploadedImagesData.length === 0) {
-        throw new Error('No images returned from server')
-      }
-      
-      const newImgs = uploadedImagesData.map((img: any, i: number) => ({
-        url: img.url,
-        thumbnail: img.thumbnail || img.url.replace('/upload/', '/upload/w_200,h_200,c_fill/'),
-        isPrimary: uploadedImages.length === 0 && i === 0,
-        publicId: img.publicId
-      }))
-      
-      const all = [...uploadedImages, ...newImgs]
-      setUploadedImages(all)
-      setValue('media.images', all)
-      toast.success(`${files.length} image(s) uploaded successfully`)
-    } else {
-      throw new Error(res.data.message || 'Upload failed')
+    const files = Array.from(e.target.files || [])
+    if (uploadedImages.length + files.length > 10) {
+      toast.error('Maximum 10 images allowed')
+      return
     }
-  } catch (error: any) {
-    console.error('Upload error:', error)
-    toast.error('Upload failed', {
-      description: error.response?.data?.message || error.message || 'Please try again'
-    })
-  } finally {
-    setIsUploading(false)
+    
+    setIsUploading(true)
     setUploadProgress(0)
+    
+    const fd = new FormData()
+    files.forEach(f => fd.append('images', f))
+    
+    try {
+      const res = await axios.post(`${BASE_URL}/api/v1/vendor/products/upload-images`, fd, {
+        headers: { 
+          'Content-Type': 'multipart/form-data', 
+          'Authorization': `Bearer ${accessToken}`
+        },
+        onUploadProgress: (pe) => {
+          if (pe.total) {
+            setUploadProgress((pe.loaded / pe.total) * 100)
+          }
+        },
+      })
+      
+      console.log("Upload response:", res.data) // Debug log
+      
+      // 🔥 FIX: Check both response structures
+      if (res.data.success) {
+        // Handle both possible response structures
+        let uploadedImagesData = res.data.data?.images || res.data.images
+        
+        if (!uploadedImagesData || uploadedImagesData.length === 0) {
+          throw new Error('No images returned from server')
+        }
+        
+        const newImgs = uploadedImagesData.map((img: any, i: number) => ({
+          url: img.url,
+          thumbnail: img.thumbnail || img.url.replace('/upload/', '/upload/w_200,h_200,c_fill/'),
+          isPrimary: uploadedImages.length === 0 && i === 0,
+          publicId: img.publicId
+        }))
+        
+        const all = [...uploadedImages, ...newImgs]
+        setUploadedImages(all)
+        setValue('media.images', all)
+        toast.success(`${files.length} image(s) uploaded successfully`)
+      } else {
+        throw new Error(res.data.message || 'Upload failed')
+      }
+    } catch (error: any) {
+      console.error('Upload error:', error)
+      toast.error('Upload failed', {
+        description: error.response?.data?.message || error.message || 'Please try again'
+      })
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(0)
+    }
   }
-}
 
   const onsubmit = async (data: ProductFormValues) => {
     console.log('Form data to submit:', data)

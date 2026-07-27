@@ -406,7 +406,7 @@ export default function NotificationsPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto pb-16 space-y-6">
+    <div className="max-w-7xl mx-auto pb-16 space-y-6">
 
       {/* ── Hero Banner ─────────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1a2e6c] via-[#2874f0] to-[#0f52c4] text-white p-6 shadow-xl shadow-[#2874f0]/25">

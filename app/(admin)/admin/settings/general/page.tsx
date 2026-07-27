@@ -308,15 +308,7 @@ export default function GeneralSettingsPage() {
   }
 
   return (
-    // ── FIX: No overflow-* on this wrapper. The admin <main> shell owns the
-    // only scrollbar. Any overflow here would create a nested scroll container.
-    // Removed max-w-full (redundant with w-full) and px-1 (layout already pads).
-    <div className="w-full space-y-6 pb-2">
-      {/* Hero header — gradient banner with live status + static context stats */}
-      {/* ── FIX: overflow-hidden is KEPT here only to clip the decorative blur
-          blobs. This is a local clip, not a scroll container — it does NOT
-          create a second scrollbar because it has a fixed height context
-          (content-driven, no overflow-y). */}
+    <div className="relative w-full max-w-full space-y-6 pb-2">
       <div className="relative overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-6 sm:p-7">
         <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-gradient-to-br from-blue-400/20 to-indigo-500/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-16 left-1/3 h-40 w-40 rounded-full bg-fuchsia-400/10 blur-3xl" />

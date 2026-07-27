@@ -41,8 +41,6 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import {
-  LineChart,
-  Line,
   BarChart,
   Bar,
   PieChart,
@@ -57,12 +55,10 @@ import {
   Legend,
   ResponsiveContainer,
   ComposedChart,
-  RadialBarChart,
-  RadialBar,
 } from 'recharts';
 import moment from 'moment';
 import { useVendorAnalytics, VendorAnalyticsProvider } from '@/contexts/VendorAnalyticsContext';
-import { Period, TopProduct, Customer } from '@/types/vendorAnalytics';
+import { Period, } from '@/types/vendorAnalytics';
 import { cn } from '@/lib/utils';
 
 // shadcn/ui components
@@ -299,24 +295,6 @@ const CustomTooltip = ({ active, payload, label, currency = false }: any) => {
   return null;
 };
 
-// ─── NEW: Section Header Component ─────────────────────────────────────
-
-const SectionHeader = ({ icon: Icon, title, subtitle, accent = 'violet' }: { icon: React.ElementType; title: string; subtitle?: string; accent?: string }) => (
-  <div className="flex items-center gap-3 mb-4">
-    <div className={cn(
-      "w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0",
-      accent === 'violet' && 'bg-violet-100 text-violet-600 dark:bg-violet-950/40',
-      accent === 'emerald' && 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40',
-      accent === 'orange' && 'bg-orange-100 text-orange-600 dark:bg-orange-950/40',
-    )}>
-      <Icon className="h-4.5 w-4.5" />
-    </div>
-    <div>
-      <h2 className="text-base font-bold text-gray-900 dark:text-white">{title}</h2>
-      {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
-    </div>
-  </div>
-);
 
 // ─── Main Dashboard Component ─────────────────────────────────────────
 
@@ -494,38 +472,38 @@ const VendorDashboardContent: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-violet-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-violet-950/20">
 
       {/* Hero Header */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-violet-700 via-indigo-700 to-blue-700 px-4 sm:px-6 py-6 sm:py-8 mb-6 sm:mb-8">
-        {/* Decorative blobs */}
-        <div className="absolute top-0 left-0 w-64 h-64 bg-white/5 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-purple-500/20 rounded-full translate-x-1/3 translate-y-1/2 blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 w-48 h-48 bg-blue-400/10 rounded-full -translate-x-1/2 -translate-y-1/2 blur-2xl" />
+      <div className="relative overflow-hidden bg-gradient-to-r from-violet-700 via-indigo-700 to-blue-700 px-4 sm:px-5 py-4 sm:py-5 mb-5 sm:mb-6">
+        {/* Decorative blobs – slightly smaller */}
+        <div className="absolute top-0 left-0 w-48 h-48 bg-white/5 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
+        <div className="absolute bottom-0 right-0 w-72 h-72 bg-purple-500/20 rounded-full translate-x-1/3 translate-y-1/2 blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 w-36 h-36 bg-blue-400/10 rounded-full -translate-x-1/2 -translate-y-1/2 blur-2xl" />
 
         <div className="relative container mx-auto max-w-7xl">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
             <div>
-              <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
-                  <Sparkles className="h-5 w-5 text-white" />
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
+                  <Sparkles className="h-4 w-4 text-white" />
                 </div>
-                <span className="text-white/70 text-xs sm:text-sm font-medium tracking-wide uppercase">
+                <span className="text-white/70 text-[11px] sm:text-xs font-medium tracking-wide uppercase">
                   RentEase Analytics
                 </span>
-                <Badge className="bg-white/20 text-white border-white/30 text-xs hover:bg-white/30">
+                <Badge className="bg-white/20 text-white border-white/30 text-[10px] px-1.5 py-0 hover:bg-white/30">
                   Vendor Dashboard
                 </Badge>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
+              <h1 className="text-xl sm:text-2xl font-bold text-white mb-0.5 leading-tight">
                 Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'} 👋
               </h1>
-              <p className="text-indigo-200 text-xs sm:text-sm">
+              <p className="text-indigo-200 text-xs">
                 Here's your rental business performance at a glance
               </p>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
               <Select value={period} onValueChange={(v: Period) => setPeriod(v)}>
-                <SelectTrigger className="w-[130px] sm:w-[140px] bg-white/10 border-white/30 text-white hover:bg-white/20 [&>span]:text-white">
-                  <Calendar className="mr-2 h-4 w-4 text-white" />
+                <SelectTrigger className="h-8 w-[120px] sm:w-[130px] bg-white/10 border-white/30 text-white text-xs hover:bg-white/20 [&>span]:text-white">
+                  <Calendar className="mr-1.5 h-3.5 w-3.5 text-white" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -537,39 +515,43 @@ const VendorDashboardContent: React.FC = () => {
               </Select>
               <Button
                 variant="outline"
+                size="sm"
                 onClick={handleExport}
                 disabled={exporting}
-                className="bg-white/10 border-white/30 text-white hover:bg-white/20 hover:text-white"
+                className="h-8 bg-white/10 border-white/30 text-white text-xs hover:bg-white/20 hover:text-white"
               >
-                <Download className="mr-0 sm:mr-2 h-4 w-4" />
+                <Download className="mr-0 sm:mr-1.5 h-3.5 w-3.5" />
                 <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export'}</span>
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={fetchAllData}
-                className="text-white hover:bg-white/20 h-9 w-9 flex-shrink-0"
+                className="text-white hover:bg-white/20 h-8 w-8 flex-shrink-0"
               >
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
 
-          {/* NEW: Quick highlight strip in header */}
-          <div className="relative mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Quick highlight strip – tighter */}
+          <div className="relative mt-4 grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5">
             {[
-              { icon: Zap, label: 'Today\'s Orders', value: overview?.kpi?.rentals?.current ?? '—' },
+              { icon: Zap, label: "Today's Orders", value: overview?.kpi?.rentals?.current ?? '—' },
               { icon: Clock, label: 'Avg Response', value: '12 min' },
               { icon: ShieldCheck, label: 'Trust Score', value: '98%' },
               { icon: Award, label: 'Seller Tier', value: 'Gold' },
             ].map((item, i) => (
-              <div key={i} className="flex items-center gap-3 bg-white/10 backdrop-blur-sm rounded-xl border border-white/15 px-3 py-2.5">
-                <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
-                  <item.icon className="h-4 w-4 text-white" />
+              <div
+                key={i}
+                className="flex items-center gap-2.5 bg-white/10 backdrop-blur-sm rounded-lg border border-white/15 px-2.5 py-2"
+              >
+                <div className="w-7 h-7 rounded-md bg-white/15 flex items-center justify-center flex-shrink-0">
+                  <item.icon className="h-3.5 w-3.5 text-white" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-white font-bold text-sm leading-tight">{item.value}</p>
-                  <p className="text-indigo-200 text-[11px] truncate">{item.label}</p>
+                  <p className="text-white font-semibold text-sm leading-tight">{item.value}</p>
+                  <p className="text-indigo-200 text-[10px] truncate">{item.label}</p>
                 </div>
               </div>
             ))}
@@ -584,51 +566,55 @@ const VendorDashboardContent: React.FC = () => {
         ) : (
           <>
             {/* KPI Grid */}
-            <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 mb-6 sm:mb-8 -mt-4">
-              {KPIS.map((kpi, idx) => {
+            <div className="grid gap-2.5 sm:gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 mb-5 sm:mb-6 -mt-3">
+              {KPIS.map((kpi) => {
                 const cfg = KPI_CONFIGS[kpi.configIdx];
                 const Icon = kpi.icon;
                 return (
                   <Card
                     key={kpi.label}
                     className={cn(
-                      "relative overflow-hidden border-0 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 cursor-pointer group",
+                      "relative overflow-hidden border-0 shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5 cursor-pointer group",
                       cfg.glow
                     )}
                   >
                     {/* Gradient background */}
-                    <div className={`absolute inset-0 bg-gradient-to-br ${cfg.gradient} opacity-100`} />
-                    {/* Decorative circles */}
-                    <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-white/10 rounded-full transition-transform duration-500 group-hover:scale-125" />
-                    <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-white/5 rounded-full" />
+                    <div className={`absolute inset-0 bg-gradient-to-br ${cfg.gradient}`} />
+                    
+                    {/* Decorative circles – smaller */}
+                    <div className="absolute -bottom-3 -right-3 w-16 h-16 bg-white/10 rounded-full transition-transform duration-500 group-hover:scale-125" />
+                    <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-white/5 rounded-full" />
 
-                    <CardContent className="relative p-4 sm:p-5">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className={`p-2 rounded-xl ${cfg.iconBg} backdrop-blur-sm`}>
-                          <Icon className={`h-5 w-5 ${cfg.iconColor}`} />
+                    <CardContent className="relative p-3 sm:p-3.5">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className={`p-1.5 rounded-lg ${cfg.iconBg} backdrop-blur-sm`}>
+                          <Icon className={`h-4 w-4 ${cfg.iconColor}`} />
                         </div>
                         {kpi.growth !== undefined && (
-                          <div className={cn(
-                            "flex items-center gap-0.5 text-xs font-semibold px-2 py-1 rounded-full",
-                            kpi.growth >= 0
-                              ? "bg-white/20 text-white"
-                              : "bg-black/20 text-white"
-                          )}>
-                            {kpi.growth >= 0
-                              ? <ArrowUpRight className="h-3 w-3" />
-                              : <ArrowDownRight className="h-3 w-3" />}
+                          <div
+                            className={cn(
+                              "flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
+                              kpi.growth >= 0 ? "bg-white/20 text-white" : "bg-black/20 text-white"
+                            )}
+                          >
+                            {kpi.growth >= 0 ? (
+                              <ArrowUpRight className="h-2.5 w-2.5" />
+                            ) : (
+                              <ArrowDownRight className="h-2.5 w-2.5" />
+                            )}
                             {Math.abs(kpi.growth).toFixed(1)}%
                           </div>
                         )}
                       </div>
-                      <p className="text-xl sm:text-2xl font-bold text-white mb-0.5 tracking-tight">
+
+                      <p className="text-lg sm:text-xl font-bold text-white leading-none tracking-tight">
                         {kpi.value}
                       </p>
-                      <p className="text-[11px] sm:text-xs text-white/70 font-medium uppercase tracking-wider">
+                      <p className="text-[10px] sm:text-[11px] text-white/70 font-medium uppercase tracking-wider mt-1">
                         {kpi.label}
                       </p>
                       {kpi.subText && (
-                        <p className="text-xs text-white/50 mt-0.5">{kpi.subText}</p>
+                        <p className="text-[10px] text-white/50 mt-0.5 truncate">{kpi.subText}</p>
                       )}
                     </CardContent>
                   </Card>
