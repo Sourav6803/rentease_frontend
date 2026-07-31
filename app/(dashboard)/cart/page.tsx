@@ -28,7 +28,6 @@ import {
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import axios from 'axios'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -37,8 +36,8 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { applyCartCoupon, removeCartCoupon, getPublicCoupons, type PublicCoupon } from '@/lib/api/coupons'
+import { useCart } from '@/hooks/useCart'
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -724,85 +723,35 @@ function CartSkeleton() {
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function CartPage() {
-  const { data: session, status } = useSession()
+  const { status } = useSession()
   const router = useRouter()
-  const [cart, setCart] = useState<Cart | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  // Shared cart context — mutations here update the header badge instantly.
+  const { cart, isLoading, updateCartItem, removeCartItem, setCart } = useCart()
   const [isUpdating, setIsUpdating] = useState(false)
-
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      setCart(null)
-      setIsLoading(false)
-    }
-    if (status === 'authenticated') {
-      fetchCart()
-    }
-  }, [status])
-
-  const fetchCart = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const response = await axios.get(`${BASE_URL}/api/v1/cart/me`, {
-        headers: { Authorization: `Bearer ${(session?.user?.accessToken)}` },
-      })
-      if (response.data.success) {
-        setCart(response.data.data.cart)
-      }
-    } catch {
-      toast.error('Failed to load your cart', { description: 'Please refresh and try again.' })
-    } finally {
-      setIsLoading(false)
-    }
-  }, [session])
 
   const handleUpdateItem = useCallback(
     async (itemId: string, data: { quantity?: number; rentalMonths?: number }) => {
       setIsUpdating(true)
       try {
-        const response = await axios.put(
-          `${BASE_URL}/api/v1/cart/items/${itemId}`,
-          data,
-          {
-            headers: {
-              Authorization: `Bearer ${(session?.user?.accessToken)}`,
-            },
-          }
-        )
-        if (response.data.success) {
-          setCart(response.data.data.cart)
-          toast.success('Cart updated')
-        }
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { message?: string } } }
-        toast.error(error.response?.data?.message || 'Failed to update cart')
+        const ok = await updateCartItem(itemId, data)
+        if (ok) toast.success('Cart updated')
       } finally {
         setIsUpdating(false)
       }
     },
-    [session]
+    [updateCartItem]
   )
 
   const handleRemoveItem = useCallback(
     async (itemId: string) => {
       setIsUpdating(true)
       try {
-        const response = await axios.delete(`${BASE_URL}/api/v1/cart/item/${itemId}`, {
-          headers: {
-            Authorization: `Bearer ${(session?.user as { accessToken?: string })?.accessToken}`,
-          },
-        })
-        if (response.data.success) {
-          setCart(response.data.data.cart)
-          toast.success('Item removed')
-        }
-      } catch {
-        toast.error('Failed to remove item')
+        await removeCartItem(itemId)
       } finally {
         setIsUpdating(false)
       }
     },
-    [session]
+    [removeCartItem]
   )
 
   const handleCheckout = () => router.push('/checkout')

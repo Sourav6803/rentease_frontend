@@ -1,20 +1,5 @@
 'use client'
 
-/**
- * CHECKOUT PAGE — Razorpay-only, payment-first architecture
- *
- * FLOW (safe, Flipkart-style):
- *  1. User selects address + delivery slot
- *  2. User clicks "Proceed to Pay"
- *  3. Reserve cart items (short lock, e.g. 15 min)
- *  4. Init payment with gateway → get orderId
- *  5. Open Razorpay modal
- *     ✅ On success → verify → create rental → redirect
- *     ❌ On dismiss/failure → release reservation → show error
- *
- *  Rental is NEVER created until payment is verified.
- */
-
 import { useState, useEffect, useCallback } from 'react'
 import { getSession, useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
@@ -29,9 +14,6 @@ import { toast } from 'sonner'
 import axios from 'axios'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { computeRentalPayableFromCart, loadRazorpayScript } from '@/lib/checkoutPayment'
 import { applyCartCoupon, removeCartCoupon } from '@/lib/api/coupons'
 
@@ -343,77 +325,6 @@ function AddAddressModal({ open, onClose, onSave }: {
 
 // ─── Delivery Slot ────────────────────────────────────────────────────────────
 
-// function DeliverySlotPicker({ onSelect }: { onSelect: (slot: string) => void }) {
-//   const today = new Date()
-//   const [selDay, setSelDay] = useState(0)
-//   const [selTime, setSelTime] = useState<string | null>(null)
-
-//   const days = Array.from({ length: 6 }, (_, i) => {
-//     const d = new Date(today)
-//     d.setDate(today.getDate() + i)
-//     return {
-//       date: d,
-//       label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-IN', { weekday: 'short' }),
-//       num: d.getDate(),
-//       mon: d.toLocaleDateString('en-IN', { month: 'short' }),
-//       slots: [
-//         { t: '7 AM – 11 AM', avail: true },
-//         { t: '11 AM – 3 PM', avail: true },
-//         { t: '3 PM – 7 PM', avail: i > 0 },
-//         { t: '7 PM – 10 PM', avail: i > 1 },
-//       ],
-//     }
-//   })
-
-//   const pick = (t: string) => {
-//     setSelTime(t)
-//     onSelect(`${days[selDay].date.toISOString()}|${t}`)
-//   }
-
-//   return (
-//     <div className="space-y-4">
-//       {/* Day scroll */}
-//       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-//         {days.map((d, i) => (
-//           <button key={i} onClick={() => { setSelDay(i); setSelTime(null) }}
-//             className={`flex flex-col items-center px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-lg shrink-0 border-2 font-semibold transition-all min-w-[60px] sm:min-w-[68px] ${
-//               selDay === i
-//                 ? 'border-[#2874f0] bg-[#2874f0] text-white'
-//                 : 'border-[#e0e0e0] text-[#555] hover:border-[#2874f0]/50'
-//             }`}>
-//             <span className={`text-[9px] sm:text-[10px] uppercase tracking-wider ${selDay === i ? 'text-blue-100' : 'text-[#999]'}`}>{d.label}</span>
-//             <span className="text-lg sm:text-xl font-black leading-tight">{d.num}</span>
-//             <span className={`text-[9px] sm:text-[10px] ${selDay === i ? 'text-blue-100' : 'text-[#aaa]'}`}>{d.mon}</span>
-//           </button>
-//         ))}
-//       </div>
-
-//       {/* Time slots */}
-//       <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 gap-2">
-//         {days[selDay].slots.map((s, i) => (
-//           <button key={i} disabled={!s.avail} onClick={() => s.avail && pick(s.t)}
-//             className={`px-3.5 sm:px-4 py-3 sm:py-3.5 rounded-lg border-2 text-left transition-all ${
-//               selTime === s.t
-//                 ? 'border-[#2874f0] bg-[#f0f5ff]'
-//                 : s.avail
-//                 ? 'border-[#e0e0e0] hover:border-[#2874f0]/50 bg-white'
-//                 : 'border-[#f0f0f0] bg-[#fafafa] cursor-not-allowed'
-//             }`}>
-//             <div className="flex items-center gap-2">
-//               <Clock className={`w-3.5 h-3.5 shrink-0 ${selTime === s.t ? 'text-[#2874f0]' : s.avail ? 'text-[#999]' : 'text-[#ccc]'}`} />
-//               <span className={`text-xs sm:text-sm font-semibold ${selTime === s.t ? 'text-[#2874f0]' : s.avail ? 'text-[#333]' : 'text-[#ccc]'}`}>
-//                 {s.t}
-//               </span>
-//             </div>
-//             {!s.avail && <p className="text-[10px] text-[#ccc] mt-0.5 pl-5">Not available</p>}
-//             {selTime === s.t && <p className="text-[10px] text-[#2874f0] mt-0.5 pl-5 font-semibold">Selected ✓</p>}
-//           </button>
-//         ))}
-//       </div>
-//     </div>
-//   )
-// }
-
 function DeliverySlotPicker({ onSelect }: { onSelect: (slot: string) => void }) {
   const today = new Date()
   const [selDay, setSelDay] = useState(0)
@@ -445,7 +356,7 @@ function DeliverySlotPicker({ onSelect }: { onSelect: (slot: string) => void }) 
     <div className="space-y-3.5 sm:space-y-4">
       {/* Day scroll */}
       <div
-        className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide"
+        className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {days.map((d, i) => (
@@ -1316,26 +1227,38 @@ export default function CheckoutPage() {
             <div className="lg:sticky lg:top-[88px] space-y-3">
               {/* Items */}
               <div className="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
-                <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-[#f0f0f0] flex items-center justify-between">
+                <div className="px-3 sm:px-5 py-3 sm:py-4 border-b border-[#f0f0f0] flex items-center justify-between">
                   <h3 className="font-black text-[#333] text-xs sm:text-sm uppercase tracking-wide flex items-center gap-2">
-                    <Package className="w-4 h-4 text-[#2874f0]" />
-                    Your Rental ({cart.summary.itemsCount})
+                    <Package className="w-4 h-4 text-[#2874f0] shrink-0" />
+                    <span className="hidden sm:inline">Your Rental</span> ({cart.summary.itemsCount})
                   </h3>
                 </div>
                 <div className="divide-y divide-[#f5f5f5] max-h-64 overflow-y-auto">
                   {cart.items.map(item => (
-                    <div key={item._id} className="px-4 sm:px-5 py-3.5 flex gap-3 items-center">
-                      <div className="w-11 h-11 sm:w-12 sm:h-12 rounded bg-[#f5f5f5] overflow-hidden shrink-0 border border-[#e8e8e8]">
+                    <div
+                      key={item._id}
+                      className="px-3 sm:px-5 py-3 flex flex-wrap gap-2 sm:gap-3 items-center"
+                    >
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded bg-[#f5f5f5] overflow-hidden shrink-0 border border-[#e8e8e8]">
                         {item.product.media?.images?.[0]?.thumbnail && (
-                          <img src={item.product.media.images[0].thumbnail}
-                            alt={item.product.basicInfo.name} className="w-full h-full object-cover" />
+                          <img
+                            src={item.product.media.images[0].thumbnail}
+                            alt={item.product.basicInfo.name}
+                            className="w-full h-full object-cover"
+                          />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-semibold text-[#333] truncate">{item.product.basicInfo.name}</p>
-                        <p className="text-[11px] sm:text-xs text-[#888] mt-0.5">Qty {item.quantity} · {item.rentalMonths} months</p>
+                        <p className="text-[11px] sm:text-sm font-semibold text-[#333] truncate">
+                          {item.product.basicInfo.name}
+                        </p>
+                        <p className="text-[10px] sm:text-xs text-[#888] mt-0.5">
+                          Qty {item.quantity} · {item.rentalMonths} months
+                        </p>
                       </div>
-                      <p className="text-xs sm:text-sm font-black text-[#333] shrink-0">{fmt(item.totals.lineTotal)}</p>
+                      <p className="text-xs sm:text-sm font-black text-[#333] shrink-0 ml-auto sm:ml-0">
+                        {fmt(item.totals.lineTotal)}
+                      </p>
                     </div>
                   ))}
                 </div>

@@ -8,6 +8,7 @@ import { QueryProvider } from './QueryProvider'
 import { SocketProvider } from './SocketProvider'
 import { ToastProvider } from './ToastProvider'
 import { PushNotificationProvider } from './PushNotificationProvider'
+import { CartProvider } from '@/contexts/CartContext'
 
 interface ProvidersProps {
   children: ReactNode
@@ -21,8 +22,10 @@ export function Providers({ children }: ProvidersProps) {
           <QueryProvider>
             <SocketProvider>
               <PushNotificationProvider>
-                {children}
-                <ToastProvider />
+                <CartProvider>
+                  {children}
+                  <ToastProvider />
+                </CartProvider>
               </PushNotificationProvider>
             </SocketProvider>
           </QueryProvider>

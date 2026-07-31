@@ -60,6 +60,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { getPublicCoupons, type PublicCoupon } from '@/lib/api/coupons'
+import { useCart } from '@/hooks/useCart'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -811,6 +812,7 @@ export default function ProductDetailsPage() {
   const params = useParams()
   const router = useRouter()
   const { data: session } = useSession()
+  const { addToCart: addToCartCtx, isInCart } = useCart()
   const slug = params.slug as string
 
   const [product, setProduct] = useState<Product | null>(null)
@@ -900,21 +902,16 @@ export default function ProductDetailsPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  const addToCart = async () => {
+  const handleAddToCart = async () => {
     if (!session) { toast.error('Please login to continue'); router.push('/login'); return }
     if (!selectedTenure) { toast.error('Please select a rental duration'); return }
     if (!product) return
 
     setIsAddingToCart(true)
     try {
-      await axios.post(
-        `${BASE_URL}/api/v1/cart/add`,
-        { productId: product._id, quantity, rentalMonths: selectedTenure },
-        { headers: { Authorization: `Bearer ${session.user?.accessToken}` } }
-      )
-      toast.success('Added to cart successfully!')
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to add to cart')
+      // Delegate to the shared cart context so the header badge and any other
+      // cart consumers update instantly (no page refresh needed).
+      await addToCartCtx(product._id, quantity, selectedTenure)
     } finally {
       setIsAddingToCart(false)
     }
@@ -988,6 +985,7 @@ export default function ProductDetailsPage() {
   if (!product) return null
 
   const isInStock = product.inventory.availableQuantity > 0
+  const alreadyInCart = isInCart(product._id)
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24">
@@ -1091,10 +1089,17 @@ export default function ProductDetailsPage() {
           </div>
 
           <div className="flex gap-2 mb-6">
-            <Button className={`flex-1 h-12 text-base gap-2 ${PRIMARY_BTN}`} onClick={addToCart} disabled={isAddingToCart || !selectedTenure || !isInStock}>
-              {isAddingToCart ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
-              {isAddingToCart ? 'Adding...' : 'Add to Cart'}
-            </Button>
+            {alreadyInCart ? (
+              <Button className={`flex-1 h-12 text-base gap-2 ${PRIMARY_BTN}`} onClick={() => router.push('/cart')}>
+                <ShoppingCart className="w-4 h-4" />
+                Go to Cart
+              </Button>
+            ) : (
+              <Button className={`flex-1 h-12 text-base gap-2 ${PRIMARY_BTN}`} onClick={handleAddToCart} disabled={isAddingToCart || !selectedTenure || !isInStock}>
+                {isAddingToCart ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
+                {isAddingToCart ? 'Adding...' : 'Add to Cart'}
+              </Button>
+            )}
             <Button variant="outline" size="icon" className="h-12 w-12 border-slate-200" onClick={toggleWishlist}>
               <Heart className={`w-5 h-5 ${isWishlisted ? 'fill-rose-500 text-rose-500' : 'text-slate-500'}`} />
             </Button>
@@ -1246,10 +1251,17 @@ export default function ProductDetailsPage() {
           </div>
           {isInStock ? <div className="text-xs text-emerald-600 font-medium">In Stock</div> : <div className="text-xs text-rose-600 font-medium">Out of Stock</div>}
         </div>
-        <Button className={`flex-shrink-0 gap-2 ${PRIMARY_BTN}`} onClick={addToCart} disabled={isAddingToCart || !selectedTenure || !isInStock}>
-          <ShoppingCart className="w-4 h-4" />
-          Rent Now
-        </Button>
+        {alreadyInCart ? (
+          <Button className={`flex-shrink-0 gap-2 ${PRIMARY_BTN}`} onClick={() => router.push('/cart')}>
+            <ShoppingCart className="w-4 h-4" />
+            Go to Cart
+          </Button>
+        ) : (
+          <Button className={`flex-shrink-0 gap-2 ${PRIMARY_BTN}`} onClick={handleAddToCart} disabled={isAddingToCart || !selectedTenure || !isInStock}>
+            <ShoppingCart className="w-4 h-4" />
+            Rent Now
+          </Button>
+        )}
       </div>
 
       {/* Write Review Dialog */}
