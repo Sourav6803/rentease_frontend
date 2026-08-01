@@ -13,7 +13,8 @@ import {
   Sparkles, Zap, Gift, Truck, Clock, ChevronDown,
   Shield, RotateCcw, BadgeCheck, LayoutDashboard,
   Store, ShieldCheck, TrendingUp, History, Loader2, ArrowUpLeft,
-  CreditCard, Globe, AlertCircle, Bell, Palette
+  CreditCard, Globe, AlertCircle, Bell, Palette,
+  MapPin
 } from 'lucide-react'
 
 import {
@@ -31,6 +32,17 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -51,7 +63,7 @@ const navItems = [
 
 const getUserNavItems = (role?: string) => {
   const base = [
-    { name: 'Dashboard',  href: '/dashboard',        icon: LayoutDashboard },
+    // { name: 'Dashboard',  href: '/dashboard',        icon: LayoutDashboard },
     { name: 'Profile',    href: '/profile',           icon: User },
     { name: 'My Rentals', href: '/rentals',           icon: Package },
     { name: 'Wishlist',   href: '/wishlist',          icon: Heart },
@@ -66,6 +78,13 @@ const getUserNavItems = (role?: string) => {
   return base
 }
 
+// Roles that are allowed to see the Dashboard icon/button.
+// Standard users (undefined role or 'user'/'customer') are intentionally excluded.
+const DASHBOARD_ROLES = ['admin', 'super-admin', 'vendor', 'deliveryBoy'] as const
+
+const canSeeDashboard = (role?: string): boolean =>
+  !!role && (DASHBOARD_ROLES as readonly string[]).includes(role)
+
 // Role-based dashboard button config
 const getDashboardButton = (role?: string) => {
   switch (role) {
@@ -75,6 +94,13 @@ const getDashboardButton = (role?: string) => {
         label: 'Vendor Dashboard',
         icon: Store,
         color: 'bg-emerald-600 hover:bg-emerald-700',
+      }
+    case 'deliveryBoy':
+      return {
+        href: '/delivery/dashboard',
+        label: 'Delivery Dashboard',
+        icon: Truck,
+        color: 'bg-orange-600 hover:bg-orange-700',
       }
     case 'admin':
     case 'super-admin':
@@ -86,7 +112,7 @@ const getDashboardButton = (role?: string) => {
       }
     default:
       return {
-        href: '/dashboard',
+        href: '/',
         label: 'Dashboard',
         icon: LayoutDashboard,
         color: 'bg-blue-600 hover:bg-blue-700',
@@ -464,6 +490,8 @@ export function Header() {
   const [mobileSearch,   setMobileSearch]   = useState(false)
   const [mounted,        setMounted]        = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [logoutOpen,     setLogoutOpen]     = useState(false)  // confirmation modal visibility
+  const [loggingOut,     setLoggingOut]     = useState(false)  // async sign-out in flight
 
   const pathname = usePathname()
   const router   = useRouter()
@@ -475,6 +503,8 @@ export function Header() {
   // Get user role
   const userRole = (session?.user as any)?.role
   const dashboardButton = getDashboardButton(userRole)
+  // Standard users get no Dashboard icon; admin/vendor/deliveryBoy do.
+  const showDashboard = !!session && canSeeDashboard(userRole)
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 4)
@@ -485,13 +515,17 @@ export function Header() {
   useEffect(() => { setMounted(true) }, [])
 
   const handleLogout = async () => {
+    setLoggingOut(true)
     try {
       await signOut({ redirect: false })
       toast.success('Logged out successfully')
+      setLogoutOpen(false)
       router.push('/')
       router.refresh()
     } catch {
       toast.error('Failed to logout')
+    } finally {
+      setLoggingOut(false)
     }
   }
 
@@ -562,7 +596,7 @@ export function Header() {
                 </SheetHeader>
 
                 {/* Dashboard Button in Mobile Menu */}
-                {session && (
+                {/* {session && (
                   <div className="p-3 border-b">
                     <Button
                       className={cn(
@@ -577,7 +611,7 @@ export function Header() {
                       </Link>
                     </Button>
                   </div>
-                )}
+                )} */}
 
                 {session ? (
                   <div className="flex flex-col overflow-y-auto max-h-[calc(100vh-140px)]">
@@ -693,6 +727,19 @@ export function Header() {
                           Payments
                         </Link>
                         <Link
+                          href="/settings/address"
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                            pathname === '/settings/address'
+                              ? 'bg-blue-50 text-[#2874F0] font-bold'
+                              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                          )}
+                        >
+                          <MapPin size={18} className={cn(pathname === '/settings/address' ? 'text-[#2874F0]' : 'text-muted-foreground')} />
+                          Addresses
+                        </Link>
+                        <Link
                           href="/settings/appearance"
                           onClick={() => setMobileMenuOpen(false)}
                           className={cn(
@@ -741,7 +788,7 @@ export function Header() {
                         className="w-full justify-start gap-3 text-red-600 hover:text-red-700 hover:bg-red-50 font-medium"
                         onClick={() => {
                           setMobileMenuOpen(false)
-                          handleLogout()
+                          setLogoutOpen(true)
                         }}
                       >
                         <LogOut size={18} />
@@ -808,8 +855,8 @@ export function Header() {
             {/* Right actions */}
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
 
-              {/* Dashboard Button - Desktop */}
-              {session && (
+              {/* Dashboard Button - Desktop (admin / vendor / deliveryBoy only) */}
+              {showDashboard && (
                 <Button
                   className={cn(
                     "hidden md:flex items-center gap-2 text-white font-bold",
@@ -911,7 +958,7 @@ export function Header() {
                       </DropdownMenuItem>
                     ))}
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600 focus:bg-red-50">
+                    <DropdownMenuItem onClick={() => setLogoutOpen(true)} className="text-red-600 focus:text-red-600 focus:bg-red-50">
                       <LogOut className="mr-2 h-4 w-4" /> Log out
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -1005,6 +1052,55 @@ export function Header() {
           </div>
         )}
       </header>
+
+      {/* ── LOGOUT CONFIRMATION MODAL ─────────────────────────────────────── */}
+      <AlertDialog
+        open={logoutOpen}
+        onOpenChange={(open) => {
+          // Don't allow dismissing (Esc / overlay click / Cancel) mid sign-out.
+          if (!loggingOut) setLogoutOpen(open)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogMedia className="bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400">
+              <LogOut />
+            </AlertDialogMedia>
+            <AlertDialogTitle>Log out of your account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You’ll be signed out of RentEase on this device and will need to log
+              in again to access your rentals, wishlist, and account settings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={loggingOut}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={loggingOut}
+              // Keep the modal open while the async sign-out runs so we can
+              // show a loading state; close happens inside handleLogout.
+              onClick={(e) => {
+                e.preventDefault()
+                handleLogout()
+              }}
+            >
+              {loggingOut ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Logging out…
+                </>
+              ) : (
+                <>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Log out
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

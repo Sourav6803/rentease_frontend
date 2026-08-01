@@ -18,6 +18,7 @@ import {
   Palette,
   Globe,
   AlertCircle,
+  MapPin,
 } from 'lucide-react'
 
 interface SettingsCardProps {
@@ -119,6 +120,7 @@ const sidebarItems = [
   { id: 'notifications', label: 'Notifications', icon: Bell, href: '/settings/notifications' },
   { id: 'privacy', label: 'Privacy & Security', icon: Shield, href: '/settings/privacy' },
   { id: 'payments', label: 'Payments', icon: CreditCard, href: '/settings/payments' },
+  { id: 'addresses', label: 'Address', icon: MapPin, href: '/settings/address' },
   { id: 'appearance', label: 'Appearance', icon: Palette, href: '/settings/appearance' },
   { id: 'language', label: 'Language', icon: Globe, href: '/settings/language' },
   { id: 'danger', label: 'Danger Zone', icon: AlertCircle, href: '/settings/danger' },

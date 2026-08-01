@@ -78,11 +78,15 @@ export function useSettings() {
     Authorization: `Bearer ${accessToken}`
   }), [accessToken])
 
+  // console.log("token-->", getAuthHeader())
+  // console.log("token-->", accessToken)
+
   const fetchSettings = useCallback(async (): Promise<SettingsState | null> => {
     try {
       const response = await axios.get(`${BASE_URL}/api/v1/settings`, {
         headers: getAuthHeader()
       })
+      console.log("Settings response:", response.data)
       if (response.data.success) {
         return response.data.data.settings
       }
@@ -94,6 +98,7 @@ export function useSettings() {
       return null
     }
   }, [getAuthHeader, toast])
+
 
   const updateSection = useCallback(async <T,>(section: string, data: T): Promise<boolean> => {
     try {
