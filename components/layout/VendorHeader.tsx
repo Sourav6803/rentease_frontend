@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import { LogoutModal } from '@/components/vendor/LogoutModal'
 import { useSidebarStore } from '@/store/SidebarStore'
+import { useNotifications } from '@/hooks/useNotifications'
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 const vendorNavItems = [
@@ -81,7 +82,7 @@ export function VendorHeader() {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showQuickActions, setShowQuickActions] = useState(false)
-  const [notifications] = useState(3)
+  const { unreadCount } = useNotifications()
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -345,11 +346,11 @@ export function VendorHeader() {
                   aria-label="Notifications"
                 >
                   <Bell size={15} />
-                  {notifications > 0 && (
+                  {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-0.5
                                      rounded-full bg-[#FB641B] text-white text-[9px] font-bold
                                      flex items-center justify-center border border-[#2874F0]">
-                      {notifications}
+                      {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                   )}
                 </button>

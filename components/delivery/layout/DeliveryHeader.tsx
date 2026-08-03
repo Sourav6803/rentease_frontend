@@ -369,64 +369,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { useDeliveryPartner } from '@/contexts/DeliveryPartnerContext';
-
-// ─── Types ─────────────────────────────────────────────────────────────────
-interface Notification {
-  id: number;
-  title: string;
-  description: string;
-  time: string;
-  type: 'assignment' | 'message' | 'completed' | 'alert';
-  read: boolean;
-}
-
-// ─── Data ──────────────────────────────────────────────────────────────────
-const notifications: Notification[] = [
-  {
-    id: 1,
-    title: 'New Delivery Assignment',
-    description: 'Pick up from Furniture Store at 2:30 PM',
-    time: '5 min ago',
-    type: 'assignment',
-    read: false,
-  },
-  {
-    id: 2,
-    title: 'Customer Message',
-    description: 'Please call upon arrival — Apt 4B',
-    time: '15 min ago',
-    type: 'message',
-    read: false,
-  },
-  {
-    id: 3,
-    title: 'Delivery Completed',
-    description: 'Order #DLV-1234 delivered successfully',
-    time: '1 hour ago',
-    type: 'completed',
-    read: true,
-  },
-  {
-    id: 4,
-    title: 'Zone Bonus Active',
-    description: 'Earn 2× in Sector 5 until 6 PM',
-    time: '2 hours ago',
-    type: 'alert',
-    read: true,
-  },
-];
+import { useNotifications } from '@/hooks/useNotifications';
 
 // ─── Notification Icon ─────────────────────────────────────────────────────
-function NotificationIcon({ type }: { type: Notification['type'] }) {
-  const map = {
-    assignment: { icon: Truck,         bg: 'bg-blue-500/15',   color: 'text-blue-400' },
-    message:    { icon: MessageSquare, bg: 'bg-purple-500/15', color: 'text-purple-400' },
-    completed:  { icon: CheckCircle2,  bg: 'bg-emerald-500/15',color: 'text-emerald-400' },
-    alert:      { icon: Zap,           bg: 'bg-amber-500/15',  color: 'text-amber-400' },
+function NotificationIcon({ category }: { category?: string }) {
+  const map: Record<string, { icon: typeof Truck; bg: string; color: string }> = {
+    transactional: { icon: Truck,         bg: 'bg-blue-500/15',   color: 'text-blue-400' },
+    update:        { icon: Truck,         bg: 'bg-blue-500/15',   color: 'text-blue-400' },
+    reminder:      { icon: MessageSquare, bg: 'bg-purple-500/15', color: 'text-purple-400' },
+    system:        { icon: CheckCircle2,  bg: 'bg-emerald-500/15',color: 'text-emerald-400' },
+    alert:         { icon: Zap,           bg: 'bg-amber-500/15',  color: 'text-amber-400' },
   };
-  const { icon: Icon, bg, color } = map[type];
+  const { icon: Icon, bg, color } = map[category ?? ''] ?? {
+    icon: Bell, bg: 'bg-orange-500/15', color: 'text-orange-400',
+  };
   return (
     <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', bg)}>
       <Icon className={cn('h-4 w-4', color)} />
@@ -463,15 +421,14 @@ export function DeliveryHeader() {
   const [showSearch, setShowSearch]             = useState(false);
   const [isOnline, setIsOnline]                 = useState(true);
   const [location, setLocation]                 = useState('Fetching location…');
-  const [notifList, setNotifList]               = useState<Notification[]>(notifications);
   const searchRef                               = useRef<HTMLInputElement>(null);
 
   const pathname = usePathname();
   const { data: session } = useSession();
   const { setMobileOpen } = useDeliverySidebarStore();
   const { profile, stats, activeDeliveries } = useDeliveryPartner();
+  const { notifications: notifList, unreadCount, markAsRead, markAllAsRead } = useNotifications();
 
-  const unreadCount = notifList.filter(n => !n.read).length;
   const { title, subtitle } = getPageMeta(pathname);
   const partnerName = profile
     ? `${profile.user.profile.firstName} ${profile.user.profile.lastName}`.trim()
@@ -517,8 +474,8 @@ export function DeliveryHeader() {
     if (showSearch) searchRef.current?.focus();
   }, [showSearch]);
 
-  const markAllRead = () => setNotifList(prev => prev.map(n => ({ ...n, read: true })));
-  const markRead = (id: number) => setNotifList(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const markAllRead = () => markAllAsRead();
+  const markRead = (id: string) => markAsRead(id);
 
   const getInitials = () => {
     const name = session?.user?.name || 'Delivery Partner';
@@ -694,7 +651,12 @@ export function DeliveryHeader() {
 
                 {/* List */}
                 <div className="max-h-80 overflow-y-auto divide-y divide-orange-50 dark:divide-orange-900/20">
-                  {notifList.map(n => (
+                  {notifList.length === 0 ? (
+                    <div className="px-4 py-10 text-center">
+                      <Bell className="h-8 w-8 text-orange-200 dark:text-orange-900 mx-auto mb-2" />
+                      <p className="text-xs text-gray-400">You're all caught up</p>
+                    </div>
+                  ) : notifList.map(n => (
                     <button
                       key={n.id}
                       onClick={() => markRead(n.id)}
@@ -703,11 +665,13 @@ export function DeliveryHeader() {
                         !n.read && 'bg-orange-50/40 dark:bg-orange-950/10',
                       )}
                     >
-                      <NotificationIcon type={n.type} />
+                      <NotificationIcon category={n.category} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-gray-900 dark:text-white leading-none truncate">{n.title}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-1">{n.description}</p>
-                        <p className="text-[10px] text-orange-400/70 mt-1 font-medium">{n.time}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-1">{n.body}</p>
+                        <p className="text-[10px] text-orange-400/70 mt-1 font-medium">
+                          {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
+                        </p>
                       </div>
                       {!n.read && (
                         <span className="mt-1 h-2 w-2 rounded-full bg-orange-500 shrink-0 shadow-sm shadow-orange-400/40" />

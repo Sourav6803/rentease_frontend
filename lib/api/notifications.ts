@@ -14,10 +14,17 @@ interface ApiEnvelope<T> {
   data?: T
 }
 
-async function postJson<T>(path: string, payload: unknown): Promise<ApiEnvelope<T>> {
+async function postJson<T>(
+  path: string,
+  payload: unknown,
+  accessToken?: string
+): Promise<ApiEnvelope<T>> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
     credentials: 'include',
     body: JSON.stringify(payload),
   })
@@ -34,11 +41,32 @@ async function putJson<T>(path: string, payload: unknown): Promise<ApiEnvelope<T
   return (await res.json()) as ApiEnvelope<T>
 }
 
-async function getJson<T>(path: string): Promise<ApiEnvelope<T>> {
+async function getJson<T>(path: string, accessToken?: string): Promise<ApiEnvelope<T>> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
     credentials: 'include',
+  })
+  return (await res.json()) as ApiEnvelope<T>
+}
+
+async function mutate<T>(
+  path: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  accessToken?: string,
+  body?: unknown
+): Promise<ApiEnvelope<T>> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    credentials: 'include',
+    ...(body ? { body: JSON.stringify(body) } : {}),
   })
   return (await res.json()) as ApiEnvelope<T>
 }
@@ -52,18 +80,75 @@ export interface NotificationPreferences {
 export async function registerPushToken(
   token: string,
   platform: 'web' | 'android' | 'ios' = 'web',
-  meta: { deviceId?: string; appVersion?: string } = {}
+  meta: { deviceId?: string; appVersion?: string } = {},
+  accessToken?: string
 ) {
-  return postJson<{ message: string }>('/api/v1/notifications/push/register', {
-    token,
-    platform,
-    deviceId: meta.deviceId,
-    appVersion: meta.appVersion,
-  })
+  return postJson<{ message: string }>(
+    '/api/v1/notifications/push/register',
+    {
+      token,
+      platform,
+      deviceId: meta.deviceId,
+      appVersion: meta.appVersion,
+    },
+    accessToken
+  )
 }
 
-export async function unregisterPushToken(token: string) {
-  return postJson<{ message: string }>('/api/v1/notifications/push/unregister', { token })
+export async function unregisterPushToken(token: string, accessToken?: string) {
+  return postJson<{ message: string }>(
+    '/api/v1/notifications/push/unregister',
+    { token },
+    accessToken
+  )
+}
+
+/** Raw notification document as returned by the backend list endpoint. */
+export interface NotificationDoc {
+  _id: string
+  title: string
+  content?: { text?: string; html?: string; preview?: string } | string
+  type?: string
+  category?: string
+  priority?: string
+  data?: Record<string, unknown>
+  status?: string
+  readAt?: string
+  tracking?: { readAt?: string }
+  createdAt: string
+}
+
+export interface NotificationListResult {
+  notifications: NotificationDoc[]
+  unreadCount: number
+  pagination: { page: number; limit: number; total: number; pages: number }
+}
+
+export async function fetchNotifications(
+  accessToken: string,
+  params: { page?: number; limit?: number } = {}
+) {
+  const q = new URLSearchParams()
+  if (params.page) q.set('page', String(params.page))
+  if (params.limit) q.set('limit', String(params.limit))
+  const qs = q.toString() ? `?${q.toString()}` : ''
+  return getJson<NotificationListResult>(`/api/v1/notifications${qs}`, accessToken)
+}
+
+export async function fetchUnreadCount(accessToken: string) {
+  return getJson<{ count: number }>('/api/v1/notifications/unread/count', accessToken)
+}
+
+export async function markNotificationRead(accessToken: string, id: string) {
+  return mutate<{ notification: NotificationDoc }>(
+    `/api/v1/notifications/${id}/read`,
+    'PATCH',
+    accessToken
+  )
+}
+
+export async function markAllNotificationsRead(accessToken: string) {
+  return mutate<null>('/api/v1/notifications/read-all', 'POST', accessToken)
 }
 
 export async function getNotificationPreferences() {

@@ -14,13 +14,21 @@ import {
   isFirebaseWebConfigured,
 } from '@/lib/pushNotifications'
 import { registerPushToken, unregisterPushToken } from '@/lib/api/notifications'
+import { initNotificationSound, playNotificationSound } from '@/lib/notificationSound'
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || ''
 
 export function PushNotificationProvider({ children }: { children: React.ReactNode }) {
-  const { status } = useSession()
+  const { data: session, status } = useSession()
+  const accessToken = session?.user?.accessToken
   const router = useRouter()
   const tokenRef = useRef<string | null>(null)
+
+  // Unlock the notification chime on the first user gesture (browsers block
+  // audio until then). Safe to run for every session state.
+  useEffect(() => {
+    initNotificationSound()
+  }, [])
 
   // On login: ask permission, get token, register with backend, listen for messages.
   useEffect(() => {
@@ -39,7 +47,7 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
       tokenRef.current = token
 
       try {
-        await registerPushToken(token, 'web', { deviceId: getDeviceId() })
+        await registerPushToken(token, 'web', { deviceId: getDeviceId() }, accessToken)
       } catch (err) {
         console.error('[push] backend registration failed', err)
       }
@@ -51,6 +59,9 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
           payload?.data?.url ||
           payload?.notification?.click_action ||
           '/notifications'
+
+        // Audible cue, like major e-commerce apps.
+        playNotificationSound()
 
         toast(title, {
           description: body,
@@ -66,7 +77,7 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
       cancelled = true
       if (unsubscribe) unsubscribe()
     }
-  }, [status, router])
+  }, [status, router, accessToken])
 
   // On logout: remove the token from the backend and local cache.
   useEffect(() => {

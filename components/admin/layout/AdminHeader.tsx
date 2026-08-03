@@ -28,51 +28,22 @@ import { Badge } from '@/components/ui/badge'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 import { useSidebarStore } from '@/store/SidebarStore'
-import { format } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
+import { useNotifications } from '@/hooks/useNotifications'
 
-// Enhanced notifications with gradient backgrounds
-const notifications = [
-  {
-    id: 1,
-    title: 'New Vendor Registration',
-    description: 'Furniture World has applied for vendor account',
-    time: '5 min ago',
-    type: 'vendor',
-    read: false,
-    gradient: 'from-blue-500 to-blue-600',
-    icon: Store
-  },
-  {
-    id: 2,
-    title: 'Product Approval Needed',
-    description: '12 products pending moderation',
-    time: '1 hour ago',
-    type: 'product',
-    read: false,
-    gradient: 'from-amber-500 to-orange-500',
-    icon: Package
-  },
-  {
-    id: 3,
-    title: 'Payment Dispute',
-    description: 'Rental #RNT2412 has payment dispute',
-    time: '2 hours ago',
-    type: 'payment',
-    read: true,
-    gradient: 'from-red-500 to-red-600',
-    icon: Wallet
-  },
-  {
-    id: 4,
-    title: 'System Update',
-    description: 'New version v2.1.0 deployed successfully',
-    time: '1 day ago',
-    type: 'system',
-    read: true,
-    gradient: 'from-green-500 to-emerald-500',
-    icon: Zap
+// Map a notification category to an icon + gradient for the admin bell.
+function notificationVisual(category?: string): { icon: typeof Store; gradient: string } {
+  const map: Record<string, { icon: typeof Store; gradient: string }> = {
+    transactional: { icon: Wallet, gradient: 'from-red-500 to-red-600' },
+    promotional:   { icon: Award,  gradient: 'from-purple-500 to-fuchsia-500' },
+    alert:         { icon: AlertCircle, gradient: 'from-amber-500 to-orange-500' },
+    reminder:      { icon: Clock,  gradient: 'from-blue-500 to-blue-600' },
+    update:        { icon: Package, gradient: 'from-amber-500 to-orange-500' },
+    security:      { icon: Shield, gradient: 'from-red-500 to-rose-600' },
+    system:        { icon: Zap,    gradient: 'from-green-500 to-emerald-500' },
   }
-]
+  return map[category ?? ''] ?? { icon: Bell, gradient: 'from-blue-500 to-indigo-600' }
+}
 
 // Quick stats for header (optional)
 const quickStats = [
@@ -198,7 +169,7 @@ export function AdminHeader() {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const router = useRouter()
 
-  const unreadCount = notifications.filter(n => !n.read).length
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications()
 
   // Get page title from pathname
   const getPageTitle = () => {
@@ -334,29 +305,45 @@ export function AdminHeader() {
             <DropdownMenuContent align="end" className="w-80 mt-2 rounded-xl border border-blue-200/20 shadow-2xl bg-white dark:bg-gray-900">
               <DropdownMenuLabel className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-t-xl">
                 <span className="font-bold text-gray-900 dark:text-white">Notifications</span>
-                <Button variant="ghost" size="sm" className="h-auto p-0 text-xs font-medium text-blue-600 hover:text-blue-700">
-                  Mark all as read
-                </Button>
+                {unreadCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => markAllAsRead()}
+                    className="h-auto p-0 text-xs font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    Mark all as read
+                  </Button>
+                )}
               </DropdownMenuLabel>
               <DropdownMenuSeparator className="bg-gray-200 dark:bg-gray-700" />
               <div className="max-h-96 overflow-y-auto">
-                {notifications.map((notification) => {
-                  const Icon = notification.icon
+                {notifications.length === 0 ? (
+                  <div className="px-4 py-10 text-center">
+                    <Bell className="h-8 w-8 text-gray-200 dark:text-gray-700 mx-auto mb-2" />
+                    <p className="text-xs text-gray-400">No notifications yet</p>
+                  </div>
+                ) : notifications.map((notification) => {
+                  const { icon: Icon, gradient } = notificationVisual(notification.category)
                   return (
-                    <DropdownMenuItem key={notification.id} className="cursor-pointer p-3 focus:bg-gray-50 dark:focus:bg-gray-800 transition-all duration-150">
+                    <DropdownMenuItem
+                      key={notification.id}
+                      onClick={() => markAsRead(notification.id)}
+                      className="cursor-pointer p-3 focus:bg-gray-50 dark:focus:bg-gray-800 transition-all duration-150"
+                    >
                       <div className="flex gap-3">
                         <div className={cn(
                           "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-r shadow-md",
-                          notification.gradient
+                          gradient
                         )}>
                           <Icon className="h-4 w-4 text-white" />
                         </div>
                         <div className="flex-1 space-y-1">
                           <p className="text-sm font-semibold text-gray-900 dark:text-white leading-none">{notification.title}</p>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">{notification.description}</p>
+                          <p className="text-xs text-gray-600 dark:text-gray-400">{notification.body}</p>
                           <p className="text-[10px] text-gray-500 dark:text-gray-500 flex items-center gap-1">
                             <Clock className="h-2.5 w-2.5" />
-                            {notification.time}
+                            {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
                           </p>
                         </div>
                         {!notification.read && (

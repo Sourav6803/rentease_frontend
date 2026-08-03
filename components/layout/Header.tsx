@@ -51,6 +51,8 @@ import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 import { useCart } from '@/hooks/useCart'
+import { useNotifications } from '@/hooks/useNotifications'
+import { formatDistanceToNow } from 'date-fns'
 
 // ─── Nav config ───────────────────────────────────────────────────────────────
 const navItems = [
@@ -499,6 +501,12 @@ export function Header() {
   const { theme, setTheme } = useTheme()
   const toast = useToast()
   const { itemCount } = useCart()
+  const {
+    notifications: notifList,
+    unreadCount,
+    markAsRead,
+    markAllAsRead,
+  } = useNotifications()
 
   // Get user role
   const userRole = (session?.user as any)?.role
@@ -884,7 +892,7 @@ export function Header() {
               </Button>
 
               {/* Theme toggle */}
-              <DropdownMenu>
+              {/* <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
@@ -906,7 +914,82 @@ export function Header() {
                     <Laptop className="mr-2 h-4 w-4" /> System
                   </DropdownMenuItem>
                 </DropdownMenuContent>
-              </DropdownMenu>
+              </DropdownMenu> */}
+
+              {/* Notifications */}
+              {session && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="relative text-white hover:bg-white/15 hover:text-white border border-white/20 h-9 w-9"
+                      aria-label="Notifications"
+                    >
+                      <Bell size={18} />
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center border-2 border-[#2874F0] leading-none">
+                          {unreadCount > 99 ? '99+' : unreadCount}
+                        </span>
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-80 p-0">
+                    <div className="flex items-center justify-between px-4 py-3 border-b">
+                      <p className="text-sm font-semibold">Notifications</p>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={() => markAllAsRead()}
+                          className="text-xs font-medium text-[#2874F0] hover:underline"
+                        >
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-[360px] overflow-y-auto">
+                      {notifList.length === 0 ? (
+                        <div className="px-4 py-10 text-center">
+                          <Bell size={28} className="mx-auto mb-2 text-muted-foreground/50" />
+                          <p className="text-sm text-muted-foreground">You&apos;re all caught up</p>
+                        </div>
+                      ) : (
+                        notifList.map((n) => (
+                          <button
+                            key={n.id}
+                            onClick={() => markAsRead(n.id)}
+                            className={cn(
+                              'w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-muted/50 transition-colors flex gap-3',
+                              !n.read && 'bg-blue-50/60 dark:bg-blue-950/20'
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'mt-1.5 h-2 w-2 shrink-0 rounded-full',
+                                n.read ? 'bg-transparent' : 'bg-[#2874F0]'
+                              )}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{n.title}</p>
+                              {n.body && (
+                                <p className="text-xs text-muted-foreground line-clamp-2">{n.body}</p>
+                              )}
+                              <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                                {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
+                              </p>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    <Link
+                      href="/settings/notifications"
+                      className="block px-4 py-2.5 text-center text-xs font-medium text-[#2874F0] hover:bg-muted/50 border-t"
+                    >
+                      View all notifications
+                    </Link>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
               {/* Cart */}
               <Button

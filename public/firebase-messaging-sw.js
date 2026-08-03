@@ -18,8 +18,12 @@ self.firebaseConfig = {
   measurementId: "G-4N3T0JNY9N"
 }
 
-importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js')
-importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js')
+// IMPORTANT: The service worker uses the *namespaced* (compat) Firebase API
+// (`firebase.initializeApp`, `firebase.messaging()`), so it must load the
+// `-compat` builds. The modular `firebase-app.js` / `firebase-messaging.js`
+// paths are not importScripts-compatible on v9+ and fail with a NetworkError.
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js')
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js')
 
 firebase.initializeApp(self.firebaseConfig)
 const messaging = firebase.messaging()
