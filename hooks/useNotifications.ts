@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { useSocket } from '@/components/providers/SocketProvider'
 import { playNotificationSound } from '@/lib/notificationSound'
+import { showPushToast } from '@/components/notifications/PushToast'
 import {
   fetchNotifications,
   markNotificationRead,
@@ -95,6 +97,7 @@ export function useNotifications(options: UseNotificationsOptions = {}) {
   const { data: session, status } = useSession()
   const accessToken = session?.user?.accessToken
   const { socket } = useSocket()
+  const router = useRouter()
 
   const [notifications, setNotifications] = useState<UINotification[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -137,14 +140,32 @@ export function useNotifications(options: UseNotificationsOptions = {}) {
       if (!incoming.id || seenIds.current.has(incoming.id)) return
       seenIds.current.add(incoming.id)
       setNotifications((prev) => [incoming, ...prev].slice(0, limit))
-      if (!incoming.read) playNotificationSound()
+      if (!incoming.read) {
+        playNotificationSound()
+        // Branded in-app toast, matching the push-notification style.
+        const target =
+          (incoming.data?.url as string) ||
+          (incoming.data?.link as string) ||
+          '/notifications'
+        showPushToast({
+          title: incoming.title,
+          body: incoming.body,
+          url: target,
+          category: incoming.category,
+          image:
+            (incoming.data?.imageUrl as string) ||
+            (incoming.data?.image as string) ||
+            undefined,
+          onView: (url) => router.push(url),
+        })
+      }
     }
 
     socket.on('notification:receive', onReceive)
     return () => {
       socket.off('notification:receive', onReceive)
     }
-  }, [socket, limit])
+  }, [socket, limit, router])
 
   const markAsRead = useCallback(
     async (id: string) => {

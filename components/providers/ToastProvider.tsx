@@ -31,7 +31,7 @@ import { Toaster } from 'sonner'
 export function ToastProvider() {
   return (
     <Toaster
-      position="top-right"
+      position="bottom-right"
       richColors
       closeButton
       expand={false}
@@ -52,10 +52,12 @@ export function ToastProvider() {
           icon: 'mt-0.5 shrink-0',
         },
         style: {
-          // Neutral dark base — works across light and dark UIs
-          '--normal-bg': '#18181b',           // zinc-900
-          '--normal-border': '#27272a',       // zinc-800
-          '--normal-text': '#fafafa',         // zinc-50
+          // Light clean base for normal toasts (e-commerce style) — matches
+          // Flipkart/Amazon notification UX. Success/error/warning/info remain
+          // dark for contrast.
+          '--normal-bg': '#ffffff',           // white
+          '--normal-border': '#e5e7eb',       // gray-200
+          '--normal-text': '#111827',         // gray-900
 
           '--success-bg': '#052e16',          // green-950
           '--success-border': '#166534',      // green-800

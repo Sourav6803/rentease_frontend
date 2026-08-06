@@ -54,12 +54,7 @@ import {
 import {
   IntelligencePageShell,
   KpiGrid,
-  ChartCard,
-  DataTable,
-  StatusBadge,
-  EmptyState,
   DateRangePicker,
-  TrendPill,
   NotificationSkeleton,
   NotificationEmptyState,
   NotificationFilterBar,
@@ -88,8 +83,6 @@ import type {
 } from '@/types/admin-intelligence.types'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -97,8 +90,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 
 const CHANNEL_META = {
@@ -265,9 +256,29 @@ export default function IntelligenceNotificationsPage() {
   })
 
   const overview = overviewQ.data ?? STATIC_OVERVIEW
-  const events = listQ.data?.notifications ?? STATIC_EVENT_LOG
+  // Prefer the live list. Fall back to sample rows only while the first fetch
+  // is in flight so the table never shows fabricated data once real data
+  // (even an empty result) has loaded.
+  const events = listQ.data?.notifications ?? (listQ.isLoading ? STATIC_EVENT_LOG : [])
   const analytics = analyticsQ.data
   const preferences = preferencesQ.data
+
+  // Derive timeline from the real analytics daily facet (backend returns
+  // {_id:{year,month,day}, count, delivered, failed}). If the query hasn't
+  // loaded yet, fall back to static data so the chart doesn't flicker empty.
+  const timeline = useMemo(() => {
+    if (!analytics?.daily || analytics.daily.length === 0) return STATIC_TIMELINE
+    return analytics.daily.map((d) => {
+      const { year, month, day } = d._id
+      const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      return {
+        date,
+        sent: d.count,
+        delivered: d.delivered ?? 0,
+        failed: d.failed ?? 0,
+      }
+    })
+  }, [analytics])
 
   const kpiItems: KpiCardItem[] = useMemo(() => [
     { key: 'sent', title: 'Notifications Sent', value: fmt(overview.totalSent), icon: Send, accent: '#6366f1', sub: `${overview.delivered} delivered` },
@@ -285,6 +296,48 @@ export default function IntelligenceNotificationsPage() {
     mutationFn: () => sendTestNotification(testType),
     onSuccess: () => toast.success('Test notification sent'),
     onError: () => toast.error('Failed to send test notification'),
+  })
+
+  const broadcastM = useMutation({
+    mutationFn: (payload: BroadcastPayload) => {
+      // The backend accepts a narrower set of enums than the compose UI.
+      // Map the UI values onto the validated contract (see notification
+      // validation.middleware `broadcast`): whatsapp -> push, partners -> all,
+      // and only forward a category the backend recognises.
+      const type = (payload.type === 'whatsapp' ? 'push' : payload.type) as
+        | 'in_app'
+        | 'push'
+        | 'email'
+        | 'sms'
+      const target = (payload.target === 'partners' ? 'all' : payload.target) as
+        | 'all'
+        | 'users'
+        | 'vendors'
+        | 'specific'
+      const validCategories = ['announcement', 'promotion', 'alert', 'update'] as const
+      const category = (validCategories as readonly string[]).includes(payload.category ?? '')
+        ? (payload.category as (typeof validCategories)[number])
+        : undefined
+      return notificationApi.broadcast({
+        title: payload.title,
+        message: payload.message,
+        type,
+        category,
+        target,
+        userIds: payload.userIds,
+        priority: payload.priority,
+        scheduledFor: payload.scheduledFor,
+      })
+    },
+    onSuccess: (_res, payload) => {
+      toast.success(`Broadcast queued for delivery to ${payload.target}`)
+      setComposePayload({ title: '', message: '', type: 'email', category: 'transactional', target: 'all', priority: 'medium' })
+      queryClient.invalidateQueries({ queryKey: ['ai', 'notifications'] })
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : 'Failed to send broadcast'
+      toast.error(message)
+    },
   })
 
   const resendM = useMutation({
@@ -310,6 +363,32 @@ export default function IntelligenceNotificationsPage() {
       preferencesQ.refetch()
     },
   })
+
+  // "Use template" seeds the composer from the selected template and jumps to
+  // the Compose tab so the admin can review/edit (e.g. fill {{variables}})
+  // before broadcasting. Templates have no backend endpoints of their own, so
+  // this is the meaningful action — it feeds the real broadcast pipeline.
+  const VALID_CHANNELS: BroadcastPayload['type'][] = ['email', 'sms', 'push', 'in_app', 'whatsapp']
+  const handleUseTemplate = useCallback((t: NotificationTemplate) => {
+    const type = VALID_CHANNELS.find((c) => t.channels?.includes(c)) ?? 'email'
+    setComposePayload({
+      title: t.subject || t.name,
+      message: t.message,
+      type,
+      category: t.category,
+      target: 'all',
+      priority: 'medium',
+      htmlBody: t.htmlBody,
+    })
+    setActiveTab('compose')
+    const hasVars = t.variables && t.variables.length > 0
+    toast.success(
+      `Loaded "${t.name}" into the composer`,
+      hasVars
+        ? { description: `Replace ${t.variables.map((v) => `{{${v}}}`).join(', ')} before sending.` }
+        : undefined,
+    )
+  }, [])
 
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
@@ -471,8 +550,15 @@ export default function IntelligenceNotificationsPage() {
               value={composePayload}
               onChange={setComposePayload}
               onSend={(payload: BroadcastPayload) => {
-                toast.success(`Broadcast sent to ${payload.target}`)
-                setComposePayload({ title: '', message: '', type: 'email', category: 'transactional', target: 'all', priority: 'medium' })
+                if (!payload.title?.trim() || !payload.message?.trim()) {
+                  toast.error('Title and message are required')
+                  return
+                }
+                if (payload.title.trim().length < 3) {
+                  toast.error('Title must be at least 3 characters')
+                  return
+                }
+                broadcastM.mutate(payload)
               }}
               onPreview={(payload: BroadcastPayload) => { setComposePayload(payload); setShowPreview(true) }}
             />
@@ -499,12 +585,12 @@ export default function IntelligenceNotificationsPage() {
         <TabsContent value="templates" className="space-y-4">
           <TemplateGrid
             templates={STATIC_TEMPLATES}
-            onUse={(t: NotificationTemplate) => toast(`Using template: ${t.name}`)}
+            onUse={handleUseTemplate}
             onEdit={(t: NotificationTemplate) => setEditorTemplate(t)}
             onDuplicate={(t: NotificationTemplate) => toast('Template duplicated')}
             onDelete={(t: NotificationTemplate) => toast('Template deleted')}
             onToggle={(t: NotificationTemplate, next: boolean) => toast(`${t.name} ${next ? 'activated' : 'paused'}`)}
-            onPreview={(t: NotificationTemplate) => toast(`Preview: ${t.name}`)}
+            onPreview={(t: NotificationTemplate) => setEditorTemplate(t)}
             onCreate={() => setEditorTemplate(null)}
           />
           <TemplateEditor
@@ -522,7 +608,11 @@ export default function IntelligenceNotificationsPage() {
         <TabsContent value="analytics" className="space-y-6">
           <AnalyticsPanel
             overview={overview}
-            timeline={STATIC_TIMELINE}
+            timeline={timeline}
+            loading={analyticsQ.isLoading}
+            // Campaign-level performance has no backend source yet (there is no
+            // campaign entity in the notification service); showing sample data
+            // until a /admin/campaigns analytics endpoint exists.
             campaigns={STATIC_CAMPAIGNS}
           />
           <CampaignDrawer

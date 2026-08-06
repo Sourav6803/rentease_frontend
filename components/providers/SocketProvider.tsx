@@ -30,7 +30,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const { data: session } = useSession()
-  const accessToken = (session as unknown as { accessToken?: string } | null)?.accessToken
+  const accessToken = session?.user?.accessToken
 
   useEffect(() => {
     if (!accessToken) return

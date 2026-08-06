@@ -1029,8 +1029,34 @@ export const notificationApi = {
       intelligenceClient.get(`${NOTIFICATION_PREFIX}/admin/analytics`),
     ),
 
-  broadcast: (payload: { title: string; message: string; type?: string; audience?: string }) =>
-    unwrap(intelligenceClient.post(`${NOTIFICATION_PREFIX}/admin/broadcast`, payload)),
+  /**
+   * Admin broadcast. The backend validator expects `content.text` (not a flat
+   * `message`) and `target` (not `audience`); this adapter maps the UI-friendly
+   * payload onto that contract. See notification.controller.sendBroadcast /
+   * validation.middleware `broadcast`.
+   */
+  broadcast: (payload: {
+    title: string
+    message: string
+    type?: 'in_app' | 'push' | 'email' | 'sms'
+    category?: 'announcement' | 'promotion' | 'alert' | 'update'
+    target?: 'all' | 'users' | 'vendors' | 'specific'
+    userIds?: string[]
+    priority?: 'low' | 'medium' | 'high' | 'urgent'
+    scheduledFor?: string
+  }) =>
+    unwrap(
+      intelligenceClient.post(`${NOTIFICATION_PREFIX}/admin/broadcast`, {
+        title: payload.title,
+        content: { text: payload.message },
+        type: payload.type,
+        category: payload.category,
+        target: payload.target,
+        userIds: payload.userIds,
+        priority: payload.priority,
+        scheduledFor: payload.scheduledFor,
+      }),
+    ),
 }
 
 export async function getNotificationOverview(): Promise<NotificationOverview> {

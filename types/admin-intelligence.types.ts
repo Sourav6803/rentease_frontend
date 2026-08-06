@@ -846,11 +846,18 @@ export interface NotificationRecord {
 }
 
 export interface NotificationAnalytics {
-  total: number
-  sent: number
-  failed: number
-  readRate: number
-  byType: Array<{ _id: string; count: number }>
+  overview?: Array<{ _id: null; total: number; sent: number; failed: number; read: number }>
+  byType: Array<{ _id: string; count: number; read?: number }>
+  daily?: Array<{
+    _id: { year: number; month: number; day: number }
+    count: number
+    delivered?: number
+    failed?: number
+  }>
+  readRate?: Array<{ _id: null; rate: number }>
+  total?: number
+  sent?: number
+  failed?: number
   [key: string]: unknown
 }
 

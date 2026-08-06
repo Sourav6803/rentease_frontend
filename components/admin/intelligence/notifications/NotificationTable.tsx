@@ -38,6 +38,28 @@ function asRec(row: Row): NotificationRecordExtended {
   return row as unknown as NotificationRecordExtended
 }
 
+/**
+ * The recipient can arrive as a plain string (email/id) or as a populated
+ * Mongo user object ({ _id, email, profile: { firstName, lastName } }).
+ * Never return the object itself — React cannot render it.
+ */
+function resolveRecipient(row: Row): string {
+  const rec = asRec(row)
+  const raw = (rec.recipient ?? rec.user) as unknown
+  if (!raw) return '—'
+  if (typeof raw === 'string') return raw
+  if (typeof raw === 'object') {
+    const u = raw as {
+      email?: string
+      profile?: { firstName?: string; lastName?: string }
+      _id?: string
+    }
+    const name = [u.profile?.firstName, u.profile?.lastName].filter(Boolean).join(' ').trim()
+    return name || u.email || u._id || '—'
+  }
+  return String(raw)
+}
+
 function formatDate(value?: string) {
   if (!value) return '—'
   return new Date(value).toLocaleString([], {
@@ -81,8 +103,8 @@ export function NotificationTable({
       key: 'recipient',
       header: 'Recipient',
       sortable: true,
-      accessor: (r) => asRec(r).recipient ?? asRec(r).user ?? '—',
-      render: (r) => <span className="text-sm text-slate-600">{asRec(r).recipient ?? asRec(r).user ?? '—'}</span>,
+      accessor: (r) => resolveRecipient(r),
+      render: (r) => <span className="text-sm text-slate-600">{resolveRecipient(r)}</span>,
     },
     {
       key: 'channel',

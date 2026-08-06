@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
-import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import {
   getFcmToken,
@@ -15,6 +14,7 @@ import {
 } from '@/lib/pushNotifications'
 import { registerPushToken, unregisterPushToken } from '@/lib/api/notifications'
 import { initNotificationSound, playNotificationSound } from '@/lib/notificationSound'
+import { showPushToast } from '@/components/notifications/PushToast'
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || ''
 
@@ -59,16 +59,20 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
           payload?.data?.url ||
           payload?.notification?.click_action ||
           '/notifications'
+        const category = payload?.data?.type || payload?.data?.category
+        const image = payload?.notification?.image || payload?.data?.imageUrl
 
         // Audible cue, like major e-commerce apps.
         playNotificationSound()
 
-        toast(title, {
-          description: body,
-          action: {
-            label: 'View',
-            onClick: () => router.push(url),
-          },
+        // Branded, production-grade in-app toast (Flipkart/Amazon style).
+        showPushToast({
+          title,
+          body,
+          url: url === 'FLUTTER_NOTIFICATION_CLICK' ? '/notifications' : url,
+          category,
+          image,
+          onView: (target) => router.push(target),
         })
       })
     })()
