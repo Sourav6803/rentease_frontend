@@ -12,7 +12,7 @@ import {
   getDeviceId,
   isFirebaseWebConfigured,
 } from '@/lib/pushNotifications'
-import { registerPushToken, unregisterPushToken } from '@/lib/api/notifications'
+import { registerPushToken, unregisterPushToken, checkPushTokenStatus } from '@/lib/api/notifications'
 import { initNotificationSound, playNotificationSound } from '@/lib/notificationSound'
 import { showPushToast } from '@/components/notifications/PushToast'
 
@@ -30,28 +30,15 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
     initNotificationSound()
   }, [])
 
-  // On login: ask permission, get token, register with backend, listen for messages.
+  // On login: ensure a push token exists, then listen for messages.
   useEffect(() => {
     if (status !== 'authenticated' || !isFirebaseWebConfigured()) return
 
     let cancelled = false
     let unsubscribe: (() => void) | null = null
 
-    ;(async () => {
-      const permission = await requestPermission()
-      if (permission !== 'granted' || cancelled) return
-
-      const token = await getFcmToken(VAPID_KEY)
-      if (!token || cancelled) return
-
-      tokenRef.current = token
-
-      try {
-        await registerPushToken(token, 'web', { deviceId: getDeviceId() }, accessToken)
-      } catch (err) {
-        console.error('[push] backend registration failed', err)
-      }
-
+    // Attach the foreground listener that renders the branded in-app toast.
+    const attachForegroundListener = async () => {
       unsubscribe = await onForegroundMessage((payload) => {
         const title = payload?.notification?.title || 'RentEase'
         const body = payload?.notification?.body || ''
@@ -75,6 +62,44 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
           onView: (target) => router.push(target),
         })
       })
+    }
+
+    ;(async () => {
+      // Check whether an active token already exists for this device (stable
+      // per-browser deviceId). When true, skip the permission prompt and token
+      // generation entirely — the backend already has a usable subscription.
+      const deviceId = getDeviceId()
+      try {
+        const { exists } = await checkPushTokenStatus(deviceId, accessToken)
+        if (cancelled) return
+        if (exists) {
+          console.log('[push] Active token already registered for this device')
+          await attachForegroundListener()
+          return
+        }
+      } catch (err) {
+        // Status check failed (network / not authed) — fall through to
+        // regenerate. Non-critical.
+        console.warn('[push] status check failed, will regenerate', err)
+      }
+
+      // No active token for this device — generate and register a new one.
+      const permission = await requestPermission()
+      if (permission !== 'granted' || cancelled) return
+
+      const token = await getFcmToken(VAPID_KEY)
+      if (!token || cancelled) return
+
+      tokenRef.current = token
+
+      try {
+        await registerPushToken(token, 'web', { deviceId }, accessToken)
+      } catch (err) {
+        console.error('[push] backend registration failed', err)
+      }
+
+      if (cancelled) return
+      await attachForegroundListener()
     })()
 
     return () => {

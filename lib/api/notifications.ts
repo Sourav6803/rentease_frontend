@@ -103,6 +103,29 @@ export async function unregisterPushToken(token: string, accessToken?: string) {
   )
 }
 
+/**
+ * Check whether the user already has an active push token for this device.
+ *
+ * Used on login to skip re-generating a token when one already exists. When
+ * `deviceId` is supplied the backend checks that specific device; otherwise it
+ * falls back to checking whether any token exists.
+ *
+ * @returns `{ exists: boolean, hasAnyToken: boolean }`
+ */
+export async function checkPushTokenStatus(
+  deviceId?: string,
+  accessToken?: string
+): Promise<{ exists: boolean; hasAnyToken: boolean }> {
+  const q = new URLSearchParams()
+  if (deviceId) q.set('deviceId', deviceId)
+  const qs = q.toString() ? `?${q.toString()}` : ''
+  const res = await getJson<{ exists: boolean; hasAnyToken: boolean }>(
+    `/api/v1/notifications/push/status${qs}`,
+    accessToken
+  )
+  return res.data ?? { exists: false, hasAnyToken: false }
+}
+
 /** Raw notification document as returned by the backend list endpoint. */
 export interface NotificationDoc {
   _id: string
