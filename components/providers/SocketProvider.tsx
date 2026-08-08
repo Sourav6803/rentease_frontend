@@ -26,6 +26,17 @@ interface SocketProviderProps {
   children: ReactNode
 }
 
+// Socket.IO connects to the server root (same origin as the REST API, on the
+// `/socket.io` path) — NOT the `/api/v1` prefix. Prefer an explicit
+// NEXT_PUBLIC_SOCKET_URL, but fall back to the shared NEXT_PUBLIC_API_BASE_URL
+// so a single env var (already required for every REST call) also drives the
+// socket. Without this, a production build with no NEXT_PUBLIC_SOCKET_URL set
+// silently falls back to localhost and the WebSocket handshake fails.
+const SOCKET_URL =
+  process.env.NEXT_PUBLIC_SOCKET_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  'http://localhost:5000'
+
 export function SocketProvider({ children }: SocketProviderProps) {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [isConnected, setIsConnected] = useState(false)
@@ -35,9 +46,9 @@ export function SocketProvider({ children }: SocketProviderProps) {
   useEffect(() => {
     if (!accessToken) return
 
-    const socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000', {
+    const socketInstance = io(SOCKET_URL, {
       path: '/socket.io',
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       auth: {
         token: accessToken,
       },
