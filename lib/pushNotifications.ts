@@ -12,19 +12,42 @@ const SW_PATH = '/firebase-messaging-sw.js'
 const TOKEN_STORAGE_KEY = 'rentease_fcm_token'
 const DEVICE_ID_KEY = 'rentease_device_id'
 
+/**
+ * Public Firebase *web* config (safe to embed client-side — these values ship
+ * to every browser and are duplicated in `public/firebase-messaging-sw.js`).
+ *
+ * Used as a fallback so production works even when the `NEXT_PUBLIC_FIREBASE_*`
+ * build-time env vars are absent (they are inlined at `next build` time, so a
+ * deploy built without them would otherwise silently disable push).
+ */
+const FALLBACK_FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyAysDYysJFf1g-ANzOXTtuoiKAeupCZkl4',
+  authDomain: 'jamalpur-bazar-7f15b.firebaseapp.com',
+  projectId: 'jamalpur-bazar-7f15b',
+  storageBucket: 'jamalpur-bazar-7f15b.firebasestorage.app',
+  messagingSenderId: '173254412310',
+  appId: '1:173254412310:web:b811039d3337b9b18c0d37',
+} as const
+
+/** Public VAPID (web push) key — also safe to embed client-side. */
+export const FALLBACK_VAPID_KEY =
+  'BO2LcF8F5sjvfbbM_ivGS2nngzJZglrrbFkwClMstHN4jKHF2EcRZkPXVjs1lfU-zcqu0uD60JwYeG96PhyehwM'
+
 function firebaseConfig() {
   return {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || FALLBACK_FIREBASE_CONFIG.apiKey,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || FALLBACK_FIREBASE_CONFIG.authDomain,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || FALLBACK_FIREBASE_CONFIG.projectId,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || FALLBACK_FIREBASE_CONFIG.storageBucket,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || FALLBACK_FIREBASE_CONFIG.messagingSenderId,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || FALLBACK_FIREBASE_CONFIG.appId,
   }
 }
 
 export function isFirebaseWebConfigured() {
-  return Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY)
+  // Config always resolves now (env var or public fallback), so web push is
+  // available in every environment.
+  return Boolean(firebaseConfig().apiKey)
 }
 
 export function getStoredToken(): string | null {

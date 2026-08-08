@@ -11,12 +11,15 @@ import {
   clearStoredToken,
   getDeviceId,
   isFirebaseWebConfigured,
+  FALLBACK_VAPID_KEY,
 } from '@/lib/pushNotifications'
 import { registerPushToken, unregisterPushToken, checkPushTokenStatus } from '@/lib/api/notifications'
 import { initNotificationSound, playNotificationSound } from '@/lib/notificationSound'
 import { showPushToast } from '@/components/notifications/PushToast'
 
-const VAPID_KEY = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || ''
+// Falls back to the public web-push key so production works even if the
+// NEXT_PUBLIC_* build-time env var is missing (it is inlined at build time).
+const VAPID_KEY = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || FALLBACK_VAPID_KEY
 
 export function PushNotificationProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession()

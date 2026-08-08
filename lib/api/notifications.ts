@@ -5,7 +5,14 @@
  * Uses the same fetch-based envelope pattern as `lib/api/auth.ts`.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+// NOTE: the rest of the codebase (and .env*) standardise on
+// NEXT_PUBLIC_API_BASE_URL. Read that first; fall back to the legacy
+// NEXT_PUBLIC_API_URL name and finally localhost for dev. Using the wrong
+// name here silently pointed push-token calls at localhost in production.
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://localhost:5000'
 
 interface ApiEnvelope<T> {
   success: boolean
