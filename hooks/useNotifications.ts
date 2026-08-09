@@ -103,6 +103,11 @@ export function useNotifications(options: UseNotificationsOptions = {}) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Derived from the list, which fetchList() now restricts to in-app
+  // notifications and the socket only ever delivers in-app — so every item
+  // here is badge-eligible. Deriving client-side (rather than using the
+  // server's snapshot unreadCount) keeps the badge correct under optimistic
+  // mark-read and live socket pushes.
   const unreadCount = notifications.reduce((n, item) => (item.read ? n : n + 1), 0)
 
   // Keep a stable ref of known ids to de-dupe socket pushes vs fetched list.
@@ -113,7 +118,11 @@ export function useNotifications(options: UseNotificationsOptions = {}) {
     setIsLoading(true)
     setError(null)
     try {
-      const res = await fetchNotifications(accessToken, { limit })
+      // The header bell only shows in-app notifications. Restrict the fetch to
+      // type=in_app so delivery-channel rows (email/push/sms/whatsapp) — which
+      // are persisted purely for tracking/analytics — never appear in the list
+      // and never inflate the unread badge (which is derived from this list).
+      const res = await fetchNotifications(accessToken, { limit, type: 'in_app' })
       const docs = res?.data?.notifications ?? []
       const mapped = docs.map(normalizeDoc)
       seenIds.current = new Set(mapped.map((m) => m.id))

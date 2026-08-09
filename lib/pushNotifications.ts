@@ -50,6 +50,34 @@ export function isFirebaseWebConfigured() {
   return Boolean(firebaseConfig().apiKey)
 }
 
+/**
+ * iOS (16.4+) only permits Web Push when the site has been installed to the
+ * home screen and is running as a standalone PWA. In a plain Safari tab the
+ * Notification/PushManager APIs may appear present but `requestPermission()` /
+ * `getToken()` fail — so callers should detect this and prompt the user to
+ * "Add to Home Screen" rather than firing a permission request that can never
+ * succeed.
+ *
+ * Returns true when we are on iOS in a browser tab (NOT standalone), i.e. web
+ * push is unavailable until the app is installed.
+ */
+export function isIosWebPushUnavailable(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false
+
+  const ua = navigator.userAgent || ''
+  const isIos =
+    /iPad|iPhone|iPod/.test(ua) ||
+    // iPadOS 13+ masquerades as macOS; disambiguate via touch support.
+    (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1)
+  if (!isIos) return false
+
+  const standalone =
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true ||
+    window.matchMedia?.('(display-mode: standalone)')?.matches === true
+
+  return !standalone
+}
+
 export function getStoredToken(): string | null {
   if (typeof window === 'undefined') return null
   return localStorage.getItem(TOKEN_STORAGE_KEY)
@@ -86,7 +114,17 @@ export async function requestPermission(): Promise<NotificationPermission> {
 async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null
   try {
-    return await navigator.serviceWorker.register(SW_PATH)
+    const registration = await navigator.serviceWorker.register(SW_PATH)
+    // Health check: wait until the SW is actually activated. `register()`
+    // resolves as soon as the registration exists, but FCM needs an ACTIVE
+    // worker to receive background pushes — using the registration before it
+    // activates yields a token bound to a worker that can't deliver. On a
+    // fresh install `registration.active` is null until activation completes,
+    // so fall back to `navigator.serviceWorker.ready`.
+    if (!registration.active) {
+      await navigator.serviceWorker.ready
+    }
+    return registration
   } catch (err) {
     console.error('[push] service worker registration failed', err)
     return null
@@ -94,8 +132,14 @@ async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null
 }
 
 /**
- * Returns a cached FCM registration token, requesting a new one if needed.
- * Safe to call repeatedly; the token is cached in localStorage.
+ * Returns a valid FCM registration token, requesting/refreshing one if needed.
+ *
+ * We do NOT short-circuit on the localStorage cache: Firebase rotates tokens
+ * (SW reinstall, key change, push-service invalidation) and a stale cached
+ * token silently fails to deliver. `getToken()` is the source of truth — it
+ * keeps its own IndexedDB cache and only hits the network when a refresh is
+ * actually required — so we always call it against a *ready* service worker and
+ * treat localStorage purely as an offline fallback when that call throws.
  */
 export async function getFcmToken(vapidKey: string): Promise<string | null> {
   if (!isFirebaseWebConfigured()) return null
@@ -109,19 +153,27 @@ export async function getFcmToken(vapidKey: string): Promise<string | null> {
     const messaging = getMessaging(app)
 
     const registration = await registerServiceWorker()
-    const cached = getStoredToken()
-    if (cached) return cached
+    if (!registration) {
+      // No usable SW — fall back to a previously cached token if we have one.
+      return getStoredToken()
+    }
 
     const token = await getToken(messaging, {
       vapidKey: vapidKey || undefined,
-      serviceWorkerRegistration: registration || undefined,
+      serviceWorkerRegistration: registration,
     })
 
-    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token)
-    return token || null
+    if (token) {
+      // Persist the (possibly rotated) token so callers can detect changes and
+      // so we have an offline fallback next time.
+      localStorage.setItem(TOKEN_STORAGE_KEY, token)
+      return token
+    }
+    return getStoredToken()
   } catch (err) {
     console.error('[push] failed to get FCM token', err)
-    return null
+    // Network/SW hiccup — a cached token is better than nothing.
+    return getStoredToken()
   }
 }
 

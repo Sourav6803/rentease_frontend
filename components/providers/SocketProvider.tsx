@@ -74,7 +74,24 @@ export function SocketProvider({ children }: SocketProviderProps) {
       setIsConnected(false)
     })
 
+    // Mobile browsers suspend background tabs, freezing the WebSocket. When the
+    // user returns, Socket.IO's auto-reconnect may already have exhausted its
+    // attempts (or never noticed the drop), leaving a dead socket. Force a
+    // reconnect whenever the tab becomes visible again and we're disconnected.
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && !socketInstance.connected) {
+        socketInstance.connect()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    // Some mobile browsers fire only pageshow/focus on resume from bfcache.
+    window.addEventListener('focus', handleVisibility)
+    window.addEventListener('online', handleVisibility)
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleVisibility)
+      window.removeEventListener('online', handleVisibility)
       socketInstance.disconnect()
     }
   }, [accessToken])

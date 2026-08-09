@@ -156,11 +156,12 @@ export interface NotificationListResult {
 
 export async function fetchNotifications(
   accessToken: string,
-  params: { page?: number; limit?: number } = {}
+  params: { page?: number; limit?: number; type?: string } = {}
 ) {
   const q = new URLSearchParams()
   if (params.page) q.set('page', String(params.page))
   if (params.limit) q.set('limit', String(params.limit))
+  if (params.type) q.set('type', params.type)
   const qs = q.toString() ? `?${q.toString()}` : ''
   return getJson<NotificationListResult>(`/api/v1/notifications${qs}`, accessToken)
 }

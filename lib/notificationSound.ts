@@ -36,10 +36,17 @@ function getAudioContext(): AudioContext | null {
  * Resume/unlock the AudioContext. Must run inside a user-gesture handler the
  * first time; after that the context stays unlocked for the session.
  */
-function unlock() {
+async function unlock(): Promise<void> {
   const ctx = getAudioContext()
   if (ctx && ctx.state === 'suspended') {
-    ctx.resume().catch(() => {})
+    // Await the resume: callers (playNotificationSound) re-check ctx.state
+    // immediately after, and that check is only meaningful once the promise
+    // settles. Fire-and-forget left the context 'suspended' on the same tick.
+    try {
+      await ctx.resume()
+    } catch {
+      /* autoplay still blocked — leave the context suspended */
+    }
   }
 }
 
@@ -70,14 +77,23 @@ export function setNotificationSoundMuted(muted: boolean) {
  * Play the notification chime. No-op on the server, when muted, or when the
  * AudioContext could not be unlocked yet.
  */
-export function playNotificationSound() {
+export async function playNotificationSound() {
   if (typeof window === 'undefined' || isNotificationSoundMuted()) return
 
   const ctx = getAudioContext()
-  if (!ctx || ctx.state !== 'running') {
-    // Not yet unlocked by a user gesture — try to resume, but don't throw.
-    unlock()
-    if (!ctx || ctx.state !== 'running') return
+  if (!ctx) return
+  if (ctx.state !== 'running') {
+    // Not yet unlocked by a user gesture — try to resume and WAIT for it to
+    // settle before deciding whether we can play. The old fire-and-forget
+    // resume left ctx.state === 'suspended' on this tick, so the first
+    // notification chime was silently dropped.
+    await unlock()
+    // Re-read the live value via the helper: TS narrows `ctx.state` to
+    // 'suspended' here and holds that across the await, so comparing it again
+    // would be a constant. unlock() may still have been blocked by autoplay,
+    // so a fresh read is the meaningful check.
+    const resumed = getAudioContext()
+    if (!resumed || resumed.state !== 'running') return
   }
 
   const now = ctx.currentTime

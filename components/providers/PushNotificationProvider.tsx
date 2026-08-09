@@ -11,6 +11,7 @@ import {
   clearStoredToken,
   getDeviceId,
   isFirebaseWebConfigured,
+  isIosWebPushUnavailable,
   FALLBACK_VAPID_KEY,
 } from '@/lib/pushNotifications'
 import { registerPushToken, unregisterPushToken, checkPushTokenStatus } from '@/lib/api/notifications'
@@ -87,6 +88,15 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
       }
 
       // No active token for this device — generate and register a new one.
+      // iOS (16.4+) only allows web push from an installed standalone PWA; in a
+      // plain Safari tab requestPermission()/getToken() cannot succeed, so skip
+      // silently instead of firing a prompt that will always fail. (A UI nudge
+      // to "Add to Home Screen" can hook into isIosWebPushUnavailable() too.)
+      if (isIosWebPushUnavailable()) {
+        console.info('[push] iOS web push requires installing the app to the home screen — skipping')
+        return
+      }
+
       const permission = await requestPermission()
       if (permission !== 'granted' || cancelled) return
 
@@ -110,6 +120,52 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
       if (unsubscribe) unsubscribe()
     }
   }, [status, router, accessToken])
+
+  // Detect OS/browser-level permission revocation. The main effect only checks
+  // permission once at login; if the user later turns notifications off in
+  // system/browser settings, our stored token becomes a dead subscription the
+  // backend keeps pushing to. Re-check when the tab regains focus (and via the
+  // Permissions API where supported) and clean up the token when it's gone.
+  useEffect(() => {
+    if (status !== 'authenticated' || typeof window === 'undefined') return
+    if (!('Notification' in window)) return
+
+    let permStatus: PermissionStatus | null = null
+
+    const handleRevocation = () => {
+      if (Notification.permission === 'granted') return
+      const token = getStoredToken()
+      if (token) {
+        unregisterPushToken(token, accessToken).catch(() => {})
+        clearStoredToken()
+        tokenRef.current = null
+      }
+    }
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') handleRevocation()
+    }
+
+    document.addEventListener('visibilitychange', onVisible)
+
+    // Permissions API gives an immediate onchange signal on browsers that
+    // support querying the 'notifications' permission (Chromium, Firefox).
+    const perms = (navigator as Navigator & { permissions?: Permissions }).permissions
+    if (perms?.query) {
+      perms
+        .query({ name: 'notifications' as PermissionName })
+        .then((ps) => {
+          permStatus = ps
+          ps.onchange = handleRevocation
+        })
+        .catch(() => {})
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      if (permStatus) permStatus.onchange = null
+    }
+  }, [status, accessToken])
 
   // On logout: remove the token from the backend and local cache.
   useEffect(() => {
