@@ -51,6 +51,7 @@ import {
   getNotificationPreferences,
   updateNotificationPreferences,
 } from '@/lib/api/admin-intelligence'
+import { NOTIFICATION_TEMPLATES } from '@/components/admin/intelligence/notifications/templates'
 import {
   IntelligencePageShell,
   KpiGrid,
@@ -160,13 +161,7 @@ const STATIC_CAMPAIGNS: CampaignPerformance[] = [
   { _id: '3', title: 'New Arrivals', type: 'email', totalSent: 5600, delivered: 5420, opened: 3240, clicked: 890, failed: 180, deliveryRate: 96.8, openRate: 59.8, clickRate: 15.9, sentAt: new Date(Date.now() - 86400000 * 12).toISOString() },
 ]
 
-const STATIC_TEMPLATES: NotificationTemplate[] = [
-  { _id: 't1', name: 'Welcome Email', slug: 'welcome-email', subject: 'Welcome to RentEase, {{firstName}}!', message: 'Start renting premium furniture today.', htmlBody: '<p>Welcome to RentEase, {{firstName}}!</p>', channels: ['email'], category: 'onboarding', variables: ['firstName'], usageCount: 12450, isActive: true, createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-06-01T00:00:00Z' },
-  { _id: 't2', name: 'Cart Abandoned', slug: 'cart-abandoned', subject: 'Your cart is waiting', message: 'Complete your rental before it expires.', htmlBody: '<p>Your cart is waiting, {{firstName}}</p>', channels: ['email', 'push'], category: 'reminder', variables: ['firstName', 'cartItems'], usageCount: 8900, isActive: true, createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-05-15T00:00:00Z' },
-  { _id: 't3', name: 'Flash Sale Alert', slug: 'flash-sale', subject: 'Flash Sale: {{discount}}% off', message: 'Hurry, sale ends soon!', htmlBody: '<p>Flash Sale: {{discount}}% off all items</p>', channels: ['email', 'sms', 'push'], category: 'promotional', variables: ['discount', 'endTime'], usageCount: 5600, isActive: true, createdAt: '2025-02-01T00:00:00Z', updatedAt: '2025-06-10T00:00:00Z' },
-  { _id: 't4', name: 'Booking Confirmed', slug: 'booking-confirmed', subject: 'Booking #{{bookingId}} confirmed', message: 'Your rental has been confirmed.', htmlBody: '<p>Booking #{{bookingId}} confirmed</p>', channels: ['email', 'sms', 'in_app'], category: 'transactional', variables: ['bookingId', 'deliveryDate'], usageCount: 34200, isActive: true, createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-04-20T00:00:00Z' },
-  { _id: 't5', name: 'Delivery Update', slug: 'delivery-update', subject: 'Your order is out for delivery', message: 'Track your delivery in real-time.', htmlBody: '<p>Your order is out for delivery</p>', channels: ['sms', 'in_app'], category: 'alert', variables: ['trackingId'], usageCount: 21000, isActive: false, createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-03-01T00:00:00Z' },
-]
+const STATIC_TEMPLATES = NOTIFICATION_TEMPLATES
 
 function buildEventLog(): NotificationRecordExtended[] {
   const events: NotificationRecordExtended[] = []
@@ -327,6 +322,11 @@ export default function IntelligenceNotificationsPage() {
         userIds: payload.userIds,
         priority: payload.priority,
         scheduledFor: payload.scheduledFor,
+        imageUrl: payload.imageUrl,
+        images: payload.images,
+        actionUrl: payload.actionUrl,
+        actionLabel: payload.actionLabel,
+        template: payload.template,
       })
     },
     onSuccess: (_res, payload) => {
@@ -371,6 +371,7 @@ export default function IntelligenceNotificationsPage() {
   const VALID_CHANNELS: BroadcastPayload['type'][] = ['email', 'sms', 'push', 'in_app', 'whatsapp']
   const handleUseTemplate = useCallback((t: NotificationTemplate) => {
     const type = VALID_CHANNELS.find((c) => t.channels?.includes(c)) ?? 'email'
+    const dynamic = t.templateType === 'welcome' || t.templateType === 'cart' || t.withCart
     setComposePayload({
       title: t.subject || t.name,
       message: t.message,
@@ -379,14 +380,20 @@ export default function IntelligenceNotificationsPage() {
       target: 'all',
       priority: 'medium',
       htmlBody: t.htmlBody,
+      imageUrl: t.imageUrl,
+      actionUrl: t.defaultActionUrl,
+      actionLabel: 'View',
+      template: { slug: t.slug, variables: t.defaultVariables },
     })
     setActiveTab('compose')
     const hasVars = t.variables && t.variables.length > 0
     toast.success(
       `Loaded "${t.name}" into the composer`,
-      hasVars
-        ? { description: `Replace ${t.variables.map((v) => `{{${v}}}`).join(', ')} before sending.` }
-        : undefined,
+      dynamic
+        ? { description: 'Personalized per user — names & cart data auto-fill on send.' }
+        : hasVars
+          ? { description: `Variables (${t.variables.map((v) => `{{${v}}}`).join(', ')}) resolve per recipient on send.` }
+          : undefined,
     )
   }, [])
 

@@ -10,6 +10,7 @@
 
 const SW_PATH = '/firebase-messaging-sw.js'
 const TOKEN_STORAGE_KEY = 'rentease_fcm_token'
+const SENDER_STORAGE_KEY = 'rentease_fcm_sender'
 const DEVICE_ID_KEY = 'rentease_device_id'
 
 /**
@@ -21,17 +22,17 @@ const DEVICE_ID_KEY = 'rentease_device_id'
  * deploy built without them would otherwise silently disable push).
  */
 const FALLBACK_FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyAysDYysJFf1g-ANzOXTtuoiKAeupCZkl4',
-  authDomain: 'jamalpur-bazar-7f15b.firebaseapp.com',
-  projectId: 'jamalpur-bazar-7f15b',
-  storageBucket: 'jamalpur-bazar-7f15b.firebasestorage.app',
-  messagingSenderId: '173254412310',
-  appId: '1:173254412310:web:b811039d3337b9b18c0d37',
+  apiKey: 'AIzaSyAE7NcwgmEjGEFOJwO78sEhlgcA5cHzcWo',
+  authDomain: 'rentease-314bb.firebaseapp.com',
+  projectId: 'rentease-314bb',
+  storageBucket: 'rentease-314bb.firebasestorage.app',
+  messagingSenderId: '335424236149',
+  appId: '1:335424236149:web:7c4f05d239e1c89e20a63c',
 } as const
 
 /** Public VAPID (web push) key — also safe to embed client-side. */
 export const FALLBACK_VAPID_KEY =
-  'BO2LcF8F5sjvfbbM_ivGS2nngzJZglrrbFkwClMstHN4jKHF2EcRZkPXVjs1lfU-zcqu0uD60JwYeG96PhyehwM'
+  'BNvs7fJjA-vWHkuSWC0cO1g5Q_dzij0dJMUP4ZhSMUQ_EE51vDfsEWoA6PVjprXZpfC1sGRSanIks89xWHaxV_M'
 
 function firebaseConfig() {
   return {
@@ -86,6 +87,7 @@ export function getStoredToken(): string | null {
 export function clearStoredToken() {
   if (typeof window === 'undefined') return
   localStorage.removeItem(TOKEN_STORAGE_KEY)
+  localStorage.removeItem(SENDER_STORAGE_KEY)
 }
 
 /** Stable per-browser device id used to de-duplicate push subscriptions. */
@@ -147,7 +149,7 @@ export async function getFcmToken(vapidKey: string): Promise<string | null> {
 
   try {
     const { initializeApp, getApps, getApp } = await import('firebase/app')
-    const { getMessaging, getToken } = await import('firebase/messaging')
+    const { getMessaging, getToken, deleteToken } = await import('firebase/messaging')
 
     const app = getApps().length ? getApp() : initializeApp(firebaseConfig())
     const messaging = getMessaging(app)
@@ -158,6 +160,32 @@ export async function getFcmToken(vapidKey: string): Promise<string | null> {
       return getStoredToken()
     }
 
+    // Self-healing for Firebase project/sender changes:
+    // If this browser subscribed under a DIFFERENT sender (e.g. the app used to
+    // run on another Firebase project), the cached push subscription is bound
+    // to the OLD sender and FCM rejects every send with
+    // "messaging/mismatched-credential". Delete the stale subscription and
+    // request a fresh token under the current sender.
+    const currentSender = firebaseConfig().messagingSenderId
+    const storedSender = localStorage.getItem(SENDER_STORAGE_KEY)
+    if (storedSender && currentSender && storedSender !== currentSender) {
+      console.warn(
+        `[push] Firebase sender changed (${storedSender} -> ${currentSender}); ` +
+          'dropping stale push subscription and re-registering'
+      )
+      try {
+        // Uses the default registration (our SW_PATH worker — registered below
+        // with default scope), which is the one the stale token was bound to.
+        await deleteToken(messaging)
+      } catch (err) {
+        // The old subscription may already be invalid server-side; ignore and
+        // fall through to requesting a new token anyway.
+        console.warn('[push] deleteToken failed (ignored):', err)
+      }
+      localStorage.removeItem(TOKEN_STORAGE_KEY)
+      localStorage.removeItem(SENDER_STORAGE_KEY)
+    }
+
     const token = await getToken(messaging, {
       vapidKey: vapidKey || undefined,
       serviceWorkerRegistration: registration,
@@ -165,8 +193,10 @@ export async function getFcmToken(vapidKey: string): Promise<string | null> {
 
     if (token) {
       // Persist the (possibly rotated) token so callers can detect changes and
-      // so we have an offline fallback next time.
+      // so we have an offline fallback next time. Remember the sender it was
+      // issued under so a future project change can self-heal again.
       localStorage.setItem(TOKEN_STORAGE_KEY, token)
+      if (currentSender) localStorage.setItem(SENDER_STORAGE_KEY, currentSender)
       return token
     }
     return getStoredToken()

@@ -1044,6 +1044,11 @@ export const notificationApi = {
     userIds?: string[]
     priority?: 'low' | 'medium' | 'high' | 'urgent'
     scheduledFor?: string
+    imageUrl?: string
+    images?: string[]
+    actionUrl?: string
+    actionLabel?: string
+    template?: { slug?: string; variables?: Record<string, string> }
   }) =>
     unwrap(
       intelligenceClient.post(`${NOTIFICATION_PREFIX}/admin/broadcast`, {
@@ -1055,6 +1060,11 @@ export const notificationApi = {
         userIds: payload.userIds,
         priority: payload.priority,
         scheduledFor: payload.scheduledFor,
+        imageUrl: payload.imageUrl,
+        images: payload.images,
+        actionUrl: payload.actionUrl,
+        actionLabel: payload.actionLabel,
+        template: payload.template,
       }),
     ),
 }

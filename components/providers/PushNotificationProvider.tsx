@@ -53,10 +53,25 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
         const category = payload?.data?.type || payload?.data?.category
         const image = payload?.notification?.image || payload?.data?.imageUrl
 
-        // Audible cue, like major e-commerce apps.
         playNotificationSound()
 
-        // Branded, production-grade in-app toast (Flipkart/Amazon style).
+        if ('Notification' in window && Notification.permission === 'granted') {
+          try {
+            navigator.serviceWorker.ready.then(reg => {
+              reg.showNotification(title, {
+                body,
+                icon: '/logo.png',
+                badge: '/badge.png',
+                image,
+                tag: payload?.data?.notificationId,
+                data: { url: url === 'FLUTTER_NOTIFICATION_CLICK' ? '/notifications' : url }
+              } as any)
+            })
+          } catch (err) {
+            console.warn('[push] Foreground system notification failed', err)
+          }
+        }
+
         showPushToast({
           title,
           body,

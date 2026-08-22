@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { NotificationTemplate } from '@/types/admin-intelligence.types'
 import { NotificationEmptyState } from './NotificationEmptyState'
+import { getTemplateEmoji } from './templates'
 
 export interface TemplateGridProps {
   templates: NotificationTemplate[]
@@ -80,16 +81,40 @@ export function TemplateGrid({
                 whileHover={{ y: -3 }}
                 className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md"
               >
-                <div className="relative h-24 overflow-hidden bg-gradient-to-br from-indigo-50 via-violet-50 to-blue-50">
-                  <div className="flex h-full w-full items-center justify-center">
-                    <LayoutTemplate className="h-8 w-8 text-indigo-300" />
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-t from-white/70 to-transparent" />
+                <div
+                  className="relative h-24 overflow-hidden"
+                  style={
+                    template.theme
+                      ? { background: `linear-gradient(135deg, ${template.theme.from}, ${template.theme.to})` }
+                      : undefined
+                  }
+                >
+                  {template.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={template.imageUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div
+                      className={cn(
+                        'flex h-full w-full items-center justify-center text-3xl',
+                        !template.theme && 'bg-gradient-to-br from-indigo-50 via-violet-50 to-blue-50',
+                      )}
+                    >
+                      <span className="drop-shadow">{getTemplateEmoji(template.slug)}</span>
+                    </div>
+                  )}
+                  {template.theme && (
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
+                  )}
                   <Badge
                     variant="outline"
-                    className={cn('absolute left-3 top-3 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide', tone.bg, tone.text, tone.border)}
+                    className={cn(
+                      'absolute left-3 top-3 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+                      template.theme ? 'border-white/40 bg-white/90 text-slate-700' : tone.bg,
+                      template.theme ? undefined : tone.text,
+                      template.theme ? undefined : tone.border,
+                    )}
                   >
-                    {template.category}
+                    {template.group ?? template.category}
                   </Badge>
                   <button
                     onClick={() => onToggle?.(template, !template.isActive)}

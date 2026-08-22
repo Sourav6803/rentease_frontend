@@ -934,6 +934,20 @@ export interface NotificationTemplate {
   isActive: boolean
   createdAt: string
   updatedAt: string
+  /** Template group: 'occasion' | 'category' | 'lifecycle'. */
+  group?: string
+  /** Backend personalization type: welcome/cart/booking/delivery/reminder/promotion. */
+  templateType?: string
+  /** When true the backend injects the user's cart products (images + titles). */
+  withCart?: boolean
+  /** Banner/hero image URL for the template (admin-uploaded). */
+  imageUrl?: string
+  /** Festive gradient theme used for previews when no image is attached. */
+  theme?: { from: string; to: string; badge: string }
+  /** Default deep link seeded into the composer when the template is used. */
+  defaultActionUrl?: string
+  /** Default static variable values (e.g. { discount: '20' }). */
+  defaultVariables?: Record<string, string>
 }
 
 export interface NotificationPreference {
@@ -956,6 +970,16 @@ export interface BroadcastPayload {
   priority?: 'low' | 'medium' | 'high' | 'urgent'
   scheduledFor?: string
   htmlBody?: string
+  /** Hero image shown at the top of the push notification (Flipkart-style). */
+  imageUrl?: string
+  /** Optional carousel of images attached to the push notification. */
+  images?: string[]
+  /** Deep link opened when the notification is tapped. */
+  actionUrl?: string
+  /** Button label for the deep link (defaults to "View"). */
+  actionLabel?: string
+  /** Template personalization — backend renders {{variables}} per recipient. */
+  template?: { slug?: string; variables?: Record<string, string> }
 }
 
 export interface ChannelStatus {

@@ -51,8 +51,25 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
   const [index, setIndex] = useState(0)
   const [auto, setAuto] = useState(true)
 
-  const next = useCallback(() => setIndex(i => (i + 1) % slides.length), [slides.length])
-  const prev = () => { setAuto(false); setIndex(i => (i - 1 + slides.length) % slides.length) }
+  // Clamp during render: when the list shrinks (e.g. 5 → 2), the effect below
+  // only resets the index AFTER paint — this guard prevents `slides[staleIndex]`
+  // from being undefined and crashing on `slide._id`.
+  const safeIndex = slides.length > 0 ? Math.min(index, slides.length - 1) : 0
+  const slide = slides.length > 0 ? slides[safeIndex] : undefined
+  // Fallback is FALLBACK — never guess from the id prefix (real Mongo ObjectIds
+  // are hex and can legitimately start with 'f', e.g. "f0a1…").
+  const isFallback = banners.length === 0
+  const slideId = slide?._id ?? ''
+  const slideKey = slideId || `slide-${safeIndex}`
+
+  const next = useCallback(() => {
+    setIndex(i => (slides.length > 1 ? (i + 1) % slides.length : 0))
+  }, [slides.length])
+
+  const prev = useCallback(() => {
+    setAuto(false)
+    setIndex(i => (slides.length > 1 ? (i - 1 + slides.length) % slides.length : 0))
+  }, [slides.length])
 
   useEffect(() => {
     if (!auto || slides.length <= 1) return
@@ -60,8 +77,11 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
     return () => clearInterval(t)
   }, [auto, next, slides.length])
 
-  // Keep index valid if the slide set changes.
-  useEffect(() => { setIndex(0) }, [banners.length])
+  // Keep the index within bounds whenever the slide set changes. Clamp instead
+  // of hard-resetting so a refetch with the same count keeps the user's spot.
+  useEffect(() => {
+    setIndex(i => (slides.length > 0 ? Math.min(i, slides.length - 1) : 0))
+  }, [slides.length])
 
   if (isLoading) {
     return (
@@ -71,8 +91,10 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
     )
   }
 
-  const slide = slides[index]
-  const isFallback = slide._id.startsWith('f')
+  // Defensive: no slides at all — render nothing instead of crashing on slide._id.
+  if (!slide) {
+    return null
+  }
 
   return (
     <div className="max-w-screen-2xl mx-auto px-3 sm:px-4 pt-3">
@@ -83,7 +105,7 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
       >
         <AnimatePresence mode="wait">
           <motion.div
-            key={slide._id}
+            key={slideKey}
             initial={{ opacity: 0, scale: 1.03 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
@@ -148,7 +170,9 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
                 <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
                   <Link
                     href={slide.cta?.link || '/products'}
-                    onClick={() => trackClick(slide._id)}
+                    onClick={() => {
+                      if (!isFallback && slideId) trackClick(slideId)
+                    }}
                     className="inline-flex items-center gap-2 px-5 sm:px-7 py-2.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base shadow-lg hover:scale-105 active:scale-95 transition-transform"
                     style={{ backgroundColor: slide.theme?.accent || '#FFD400', color: '#0D47A1' }}
                   >
@@ -186,7 +210,7 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
                   key={i}
                   onClick={() => { setAuto(false); setIndex(i) }}
                   aria-label={`Slide ${i + 1}`}
-                  className={`h-1.5 rounded-full transition-all ${i === index ? 'w-6 bg-white' : 'w-1.5 bg-white/50'}`}
+                  className={`h-1.5 rounded-full transition-all ${i === safeIndex ? 'w-6 bg-white' : 'w-1.5 bg-white/50'}`}
                 />
               ))}
             </div>

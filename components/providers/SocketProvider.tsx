@@ -55,10 +55,16 @@ export function SocketProvider({ children }: SocketProviderProps) {
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     })
+
+    let hasConnectedOnce = false
+    let errorLogCount = 0
 
     socketInstance.on('connect', () => {
       console.log('🔌 Socket connected')
+      hasConnectedOnce = true
+      errorLogCount = 0
       setSocket(socketInstance)
       setIsConnected(true)
     })
@@ -70,16 +76,27 @@ export function SocketProvider({ children }: SocketProviderProps) {
     })
 
     socketInstance.on('connect_error', (error) => {
-      console.error('Socket connection error:', error)
+      // Log only the first few failures — when the backend is down the client
+      // retries in a loop and spamming the console adds no information.
+      errorLogCount += 1
+      if (errorLogCount <= 3) {
+        console.warn(`Socket connection error (attempt ${errorLogCount}):`, error.message)
+      }
       setIsConnected(false)
     })
 
     // Mobile browsers suspend background tabs, freezing the WebSocket. When the
     // user returns, Socket.IO's auto-reconnect may already have exhausted its
     // attempts (or never noticed the drop), leaving a dead socket. Force a
-    // reconnect whenever the tab becomes visible again and we're disconnected.
+    // reconnect whenever the tab becomes visible again and we're disconnected —
+    // but ONLY if we ever connected, so a down backend doesn't get hammered.
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && !socketInstance.connected) {
+      if (
+        hasConnectedOnce &&
+        document.visibilityState === 'visible' &&
+        !socketInstance.connected &&
+        !socketInstance.active
+      ) {
         socketInstance.connect()
       }
     }

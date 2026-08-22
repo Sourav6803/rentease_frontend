@@ -1,12 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mail, MessageSquare, Smartphone, AppWindow, MessageCircle } from 'lucide-react'
+import {
+  Mail,
+  MessageSquare,
+  Smartphone,
+  AppWindow,
+  MessageCircle,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Sparkles,
+} from 'lucide-react'
 import { CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { BroadcastPayload } from '@/types/admin-intelligence.types'
+import { NOTIFICATION_TEMPLATES, getTemplateEmoji } from './templates'
 
 export interface PreviewPanelProps {
   payload?: Partial<BroadcastPayload>
@@ -27,8 +38,26 @@ function timeLabel() {
 
 export function PreviewPanel({ payload, className }: PreviewPanelProps) {
   const [active, setActive] = useState<BroadcastPayload['type']>(payload?.type ?? 'email')
+  const [imageIndex, setImageIndex] = useState(0)
   const title = payload?.title?.trim() || 'Notification title'
   const message = payload?.message?.trim() || 'Your notification message will be previewed here as it appears to recipients.'
+
+  // Hero image first, then any carousel images — Flipkart-style rich preview.
+  const pushImages = useMemo(() => {
+    const list = [payload?.imageUrl, ...(payload?.images ?? [])].filter(
+      (url): url is string => Boolean(url && url.trim()),
+    )
+    return list
+  }, [payload?.imageUrl, payload?.images])
+  const currentImage =
+    pushImages.length > 0 ? pushImages[Math.min(imageIndex, pushImages.length - 1)] : null
+
+  // Template metadata drives the festive gradient + emoji when no image is set.
+  const templateMeta = useMemo(() => {
+    const slug = payload?.template?.slug
+    if (!slug) return null
+    return NOTIFICATION_TEMPLATES.find((x) => x.slug === slug) ?? null
+  }, [payload?.template?.slug])
 
   return (
     <motion.div
@@ -96,19 +125,105 @@ export function PreviewPanel({ payload, className }: PreviewPanelProps) {
                   )}
 
                   {c.key === 'push' && (
-                    <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 p-4">
-                      <div className="flex items-start gap-3 rounded-xl bg-white/10 p-3 backdrop-blur">
-                        <div
-                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-                          style={{ background: c.color }}
-                        >
-                          <Smartphone className="h-5 w-5 text-white" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-white">{title}</p>
-                          <p className="mt-0.5 line-clamp-3 text-xs text-slate-300">{message}</p>
-                          <p className="mt-1 text-[10px] text-slate-400">now · RentEase</p>
-                        </div>
+                    <div
+                      className={cn(
+                        'rounded-2xl p-4',
+                        !templateMeta?.theme || currentImage
+                          ? 'bg-gradient-to-br from-slate-900 to-slate-800'
+                          : undefined,
+                      )}
+                      style={
+                        templateMeta?.theme && !currentImage
+                          ? {
+                              background: `linear-gradient(135deg, ${templateMeta.theme.from}, ${templateMeta.theme.to})`,
+                            }
+                          : undefined
+                      }
+                    >
+                      <div className="overflow-hidden rounded-xl bg-white/10 backdrop-blur">
+                        {currentImage ? (
+                          <div className="relative">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={currentImage}
+                              alt="Notification media"
+                              className="aspect-[16/9] w-full object-cover"
+                            />
+                            {pushImages.length > 1 && (
+                              <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent p-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setImageIndex((imageIndex - 1 + pushImages.length) % pushImages.length)
+                                  }
+                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-white transition hover:bg-white/40"
+                                  aria-label="Previous image"
+                                >
+                                  <ChevronLeft className="h-3.5 w-3.5" />
+                                </button>
+                                <div className="flex items-center gap-1">
+                                  {pushImages.map((_, i) => (
+                                    <span
+                                      key={i}
+                                      className={`h-1.5 rounded-full transition-all ${
+                                        i === imageIndex % pushImages.length ? 'w-4 bg-white' : 'w-1.5 bg-white/40'
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setImageIndex((imageIndex + 1) % pushImages.length)}
+                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-white transition hover:bg-white/40"
+                                  aria-label="Next image"
+                                >
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-3 p-3">
+                            <div
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                              style={{ background: c.color }}
+                            >
+                              {templateMeta ? (
+                                <span className="text-lg">{getTemplateEmoji(templateMeta.slug)}</span>
+                              ) : (
+                                <Smartphone className="h-5 w-5 text-white" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-white">{title}</p>
+                              <p className="mt-0.5 line-clamp-3 text-xs text-slate-300">{message}</p>
+                              <p className="mt-1 text-[10px] text-slate-400">now · RentEase</p>
+                            </div>
+                          </div>
+                        )}
+                        {currentImage && (
+                          <div className="p-3">
+                            <p className="text-sm font-semibold text-white">{title}</p>
+                            <p className="mt-0.5 line-clamp-2 text-xs text-slate-300">{message}</p>
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                              <p className="text-[10px] text-slate-400">now · RentEase</p>
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                {payload?.template?.slug && (
+                                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-medium text-white">
+                                    <Sparkles className="h-3 w-3" />
+                                    Personalized
+                                  </span>
+                                )}
+                                {payload?.actionUrl && (
+                                  <span className="flex min-w-0 items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-medium text-white">
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{payload.actionLabel || 'Tap to open'}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
