@@ -13,6 +13,7 @@ import {
 import { Rental, STATUS_CONFIG, RentalStatus } from '@/app/(vendor)/vendor/orders/types'
 import { OrderStatusBadge } from './OrderStatusBadge'
 import { format } from 'date-fns'
+import { createPortal } from 'react-dom'
 
 interface OrderDetailsModalProps {
   rental: Rental
@@ -122,11 +123,11 @@ export function OrderDetailsModal({ rental, onClose, onAction }: OrderDetailsMod
     <>
       <div className="fixed inset-0 z-50 overflow-y-auto">
         <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-          {/* Backdrop */}
-          <div className="fixed inset-0 transition-opacity bg-black bg-opacity-50" onClick={onClose} />
+          {/* Backdrop — Tailwind v4 syntax (bg-opacity-50 was removed in v4) */}
+          <div className="fixed inset-0 bg-black/50" onClick={onClose} />
           
-          {/* Modal Panel */}
-          <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full">
+          {/* Modal Panel — relative + z-10 guarantees it paints above the backdrop */}
+          <div className="relative z-10 inline-block align-bottom w-full max-w-5xl bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle">
             <div className="absolute top-4 right-4 z-10">
               <button
                 onClick={onClose}
@@ -612,7 +613,7 @@ export function OrderDetailsModal({ rental, onClose, onAction }: OrderDetailsMod
       {/* Extension Modal */}
       {showExtensionModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setShowExtensionModal(false)} />
+          <div className="fixed inset-0 bg-black/50" onClick={() => setShowExtensionModal(false)} />
           <div className="relative bg-white rounded-xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-slate-900 mb-4">Extend Rental</h3>
             <p className="text-sm text-slate-600 mb-4">

@@ -372,6 +372,7 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { useDeliveryPartner } from '@/contexts/DeliveryPartnerContext';
 import { useNotifications } from '@/hooks/useNotifications';
+import Image from 'next/image';
 
 // ─── Notification Icon ─────────────────────────────────────────────────────
 function NotificationIcon({ category }: { category?: string }) {
@@ -498,9 +499,12 @@ export function DeliveryHeader() {
               {isOnline ? 'Online' : 'Offline'}
             </span>
           </div>
-          <span className="text-[10px] text-orange-400/70 font-medium tracking-wide">
-            RentEase Delivery
-          </span>
+          <div className="flex items-center gap-1">
+            <Image src="/logo-512.png" alt="RentEase" height={18} width={18} priority className="object-contain" />
+            <span className="text-[10px] text-orange-400/70 font-medium tracking-wide">
+              Delivery
+            </span>
+          </div>
           <div className="flex items-center gap-1 text-orange-400/60">
             <Clock className="h-3 w-3" />
             <span className="text-[10px]">{currentTime}</span>

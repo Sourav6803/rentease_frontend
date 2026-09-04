@@ -412,6 +412,23 @@ export interface CampaignListResponse {
   pagination: Pagination
 }
 
+/** Real (backend-aggregated) campaign analytics for the marketing charts. */
+export interface CampaignAnalyticsData {
+  deliveryTimeline?: ChartSeriesPoint[]
+  deviceBreakdown?: Array<{ _id: string; count: number }>
+  geography?: Array<{ _id: string; count: number }>
+  opensByHour?: Array<{ _id: string; count: number }>
+  totals?: {
+    campaigns: number
+    targeted: number
+    sent: number
+    opened: number
+    clicked: number
+    bounced: number
+    revenue: number
+  }
+}
+
 export interface WorkflowExecution {
   _id: string
   workflowId: string

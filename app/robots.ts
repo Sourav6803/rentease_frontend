@@ -1,5 +1,5 @@
 /**
- * app/robots.ts — Next.js metadata route.
+ * app/robots.ts â€” Next.js metadata route.
  * Served at /robots.txt: tells crawlers which areas are public (shop pages)
  * and which are private portals (admin, vendor, delivery, user dashboard).
  */
@@ -24,7 +24,7 @@ export default function robots(): MetadataRoute.Robots {
           '/cart',
           '/checkout',
           '/profile',
-          '/rentals',
+          '/dashboard/rentals',
           '/settings',
           '/login',
           '/register',

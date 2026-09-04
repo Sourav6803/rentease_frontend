@@ -57,6 +57,7 @@ import type {
   TopProducts,
   VendorPerformance,
   Workflow,
+  CampaignAnalyticsData,
 } from '@/types/admin-intelligence.types'
 
 export type BannerType = 'hero' | 'promo' | 'strip' | 'deal';
@@ -547,6 +548,34 @@ export async function updateSegment(id: string, payload: Partial<CustomerSegment
     intelligenceClient.put(`${INTELLIGENCE_PREFIX}/segments/${id}`, payload),
   )
   return data.segment
+}
+
+export async function deleteCampaign(id: string): Promise<{ success: boolean }> {
+  return unwrap(
+    intelligenceClient.delete(`${INTELLIGENCE_PREFIX}/campaigns/${id}`),
+    { success: true },
+  )
+}
+
+export async function deleteEmailTemplate(id: string): Promise<{ success: boolean }> {
+  return unwrap(
+    intelligenceClient.delete(`${INTELLIGENCE_PREFIX}/email-templates/${id}`),
+    { success: true },
+  )
+}
+
+export async function deleteSegment(id: string): Promise<{ success: boolean }> {
+  return unwrap(
+    intelligenceClient.delete(`${INTELLIGENCE_PREFIX}/segments/${id}`),
+    { success: true },
+  )
+}
+
+export async function listCampaignAnalytics(): Promise<CampaignAnalyticsData> {
+  const data = await unwrap<{ analytics: CampaignAnalyticsData }>(
+    intelligenceClient.get(`${INTELLIGENCE_PREFIX}/campaigns/analytics`),
+  )
+  return data.analytics
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1251,6 +1280,10 @@ export const adminIntelligenceApi = {
   listSegments,
   createSegment,
   updateSegment,
+  deleteSegment,
+  deleteCampaign,
+  deleteEmailTemplate,
+  listCampaignAnalytics,
   getProductIntelligence,
   getBehaviorAnalytics,
   getBehaviorEventLog,

@@ -693,7 +693,7 @@ function CompleteSheet({ delivery, open, onClose, onComplete, token }: CompleteS
     try {
       await withRetry(() => deliveryPartnerApi.generateOtp(delivery._id));
       setOtpSent(true); setOtpCountdown(60);
-      toast.success('OTP sent to customer. Check their phone for the 6-digit code.');
+      toast.success('OTP sent to customer. Check their phone/email for the 6-digit code.');
     } catch {
       toast.error('Could not send OTP. Please try again.');
     } finally { setIsLoading(false); }

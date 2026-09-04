@@ -522,6 +522,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
+import Image from 'next/image';
 import { useDeliveryPartner } from '@/contexts/DeliveryPartnerContext';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -787,8 +788,8 @@ export function DeliverySidebar() {
       )}>
         {!collapsed && (
           <Link href="/delivery/dashboard" className="flex items-center gap-2.5 min-w-0">
-            <div className="h-9 w-9 shrink-0 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-lg shadow-orange-900/60">
-              <Truck className="h-5 w-5 text-white" />
+            <div className="h-9 w-9 shrink-0 overflow-hidden rounded-2xl bg-white/10 flex items-center justify-center">
+              <Image src="/logo-512.png" alt="RentEase" height={36} width={36} priority className="object-contain" />
             </div>
             <div className="min-w-0">
               <p className="text-base font-black text-white leading-none tracking-tighter">
@@ -801,8 +802,8 @@ export function DeliverySidebar() {
           </Link>
         )}
         {collapsed && (
-          <div className="h-9 w-9 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-lg shadow-orange-900/60">
-            <Truck className="h-5 w-5 text-white" />
+          <div className="h-9 w-9 overflow-hidden rounded-2xl bg-white/10 flex items-center justify-center">
+            <Image src="/logo-512.png" alt="RentEase" height={36} width={36} priority className="object-contain" />
           </div>
         )}
         {!isMobileOpen && (

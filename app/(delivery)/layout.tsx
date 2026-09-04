@@ -95,7 +95,7 @@ export default function DeliveryLayout({
         >
           <DeliveryHeader />
           <main className="flex-1 overflow-y-auto">
-            <div className="p-4 md:p-6 lg:p-8">{children}</div>
+            <div className="p-2">{children}</div>
           </main>
           <DeliveryFooter />
         </div>

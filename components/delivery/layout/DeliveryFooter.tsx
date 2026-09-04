@@ -1,130 +1,3 @@
-// // components/delivery/layout/DeliveryFooter.tsx
-// 'use client';
-
-// import { useState, useEffect } from 'react';
-// import { Heart, Shield, Clock, Wifi, WifiOff, Navigation, MapPin, Battery, Signal } from 'lucide-react';
-// import { Badge } from '@/components/ui/badge';
-// import { cn } from '@/lib/utils';
-
-// export function DeliveryFooter() {
-//   const [currentTime, setCurrentTime] = useState('');
-//   const [isOnline, setIsOnline] = useState(true);
-//   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
-
-//   useEffect(() => {
-//     const updateTime = () => {
-//       setCurrentTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-//     };
-//     updateTime();
-//     const interval = setInterval(updateTime, 1000);
-//     return () => clearInterval(interval);
-//   }, []);
-
-//   useEffect(() => {
-//     const handleOnline = () => setIsOnline(true);
-//     const handleOffline = () => setIsOnline(false);
-    
-//     window.addEventListener('online', handleOnline);
-//     window.addEventListener('offline', handleOffline);
-
-//     // Get battery info if available
-//     if ('getBattery' in navigator) {
-//       (navigator as any).getBattery().then((battery: any) => {
-//         setBatteryLevel(Math.floor(battery.level * 100));
-//         battery.addEventListener('levelchange', () => {
-//           setBatteryLevel(Math.floor(battery.level * 100));
-//         });
-//       });
-//     }
-
-//     return () => {
-//       window.removeEventListener('online', handleOnline);
-//       window.removeEventListener('offline', handleOffline);
-//     };
-//   }, []);
-
-//   return (
-//     <footer className="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-//       <div className="flex flex-col md:flex-row items-center justify-between gap-3 px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
-//         {/* Left Section */}
-//         <div className="flex items-center gap-3">
-//           <span>© {new Date().getFullYear()} RentEase Delivery</span>
-//           <div className="hidden md:flex items-center gap-1">
-//             <Heart className="h-3 w-3 text-orange-500" />
-//             <span>Partner App</span>
-//           </div>
-//         </div>
-
-//         {/* Center Section - Connection Status */}
-//         <div className="flex items-center gap-4">
-//           <div className="flex items-center gap-1.5">
-//             {isOnline ? (
-//               <>
-//                 <Wifi className="h-3 w-3 text-green-500" />
-//                 <span className="text-green-600 dark:text-green-400">Online</span>
-//               </>
-//             ) : (
-//               <>
-//                 <WifiOff className="h-3 w-3 text-red-500" />
-//                 <span className="text-red-600 dark:text-red-400">Offline</span>
-//               </>
-//             )}
-//           </div>
-
-//           <div className="h-3 w-px bg-gray-300 dark:bg-gray-700" />
-
-//           <div className="flex items-center gap-1.5">
-//             <Clock className="h-3 w-3" />
-//             <span>{currentTime}</span>
-//           </div>
-
-//           {batteryLevel !== null && (
-//             <>
-//               <div className="h-3 w-px bg-gray-300 dark:bg-gray-700" />
-//               <div className="flex items-center gap-1.5">
-//                 <Battery className="h-3 w-3" />
-//                 <span>{batteryLevel}%</span>
-//               </div>
-//             </>
-//           )}
-//         </div>
-
-//         {/* Right Section */}
-//         <div className="flex items-center gap-4">
-//           <a href="/delivery/support" className="hover:text-orange-600 transition-colors">
-//             Support
-//           </a>
-//           <a href="/delivery/faq" className="hover:text-orange-600 transition-colors hidden md:inline">
-//             FAQ
-//           </a>
-//           <Badge variant="outline" className="text-[9px] border-orange-200 dark:border-orange-800 text-orange-600 dark:text-orange-400">
-//             <Shield className="h-2.5 w-2.5 mr-1" />
-//             v2.1.0
-//           </Badge>
-//         </div>
-//       </div>
-
-//       {/* Emergency/Quick Actions Bar - Mobile */}
-//       <div className="md:hidden border-t border-gray-100 dark:border-gray-800 px-4 py-2 bg-gray-50 dark:bg-gray-800/50">
-//         <div className="flex items-center justify-around">
-//           <button className="flex flex-col items-center gap-0.5">
-//             <Navigation className="h-4 w-4 text-orange-500" />
-//             <span className="text-[9px] text-gray-600 dark:text-gray-400">Navigate</span>
-//           </button>
-//           <button className="flex flex-col items-center gap-0.5">
-//             <MapPin className="h-4 w-4 text-orange-500" />
-//             <span className="text-[9px] text-gray-600 dark:text-gray-400">Share Location</span>
-//           </button>
-//           <button className="flex flex-col items-center gap-0.5">
-//             <Signal className="h-4 w-4 text-orange-500" />
-//             <span className="text-[9px] text-gray-600 dark:text-gray-400">Report Issue</span>
-//           </button>
-//         </div>
-//       </div>
-//     </footer>
-//   );
-// }
-
 
 'use client';
 
@@ -151,6 +24,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useDeliveryPartner } from '@/contexts/DeliveryPartnerContext';
+import Image from 'next/image';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface BatteryManager extends EventTarget {
@@ -228,8 +102,8 @@ export function DeliveryFooter() {
         {/* Left — Branding */}
         <div className="flex items-center gap-4 text-gray-400 dark:text-gray-500">
           <div className="flex items-center gap-2">
-            <div className="h-5 w-5 rounded-md bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
-              <Truck className="h-3 w-3 text-white" />
+            <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg bg-white/70 dark:bg-white/10">
+              <Image src="/logo-512.png" alt="RentEase" height={22} width={22} priority className="object-contain" />
             </div>
             <span className="font-black text-gray-600 dark:text-gray-400 tracking-tight">
               Rent<span className="text-orange-500">Ease</span>
@@ -382,8 +256,8 @@ export function DeliveryFooter() {
         {/* Bottom branding strip */}
         <div className="flex items-center justify-between px-4 py-1.5 bg-orange-50/40 dark:bg-orange-950/10 border-t border-orange-100/40 dark:border-orange-900/15">
           <div className="flex items-center gap-1.5">
-            <div className="h-4 w-4 rounded bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center">
-              <Truck className="h-2.5 w-2.5 text-white" />
+            <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-md bg-white/70 dark:bg-white/10">
+              <Image src="/logo-512.png" alt="RentEase" height={18} width={18} priority className="object-contain" />
             </div>
             <span className="text-[10px] font-black text-gray-500 dark:text-gray-400 tracking-tight">
               Rent<span className="text-orange-500">Ease</span>

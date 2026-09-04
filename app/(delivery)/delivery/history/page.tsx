@@ -1193,14 +1193,15 @@ export default function DeliveryHistoryPage() {
           side="right"
           className="w-full overflow-y-auto bg-white p-0 dark:bg-[#1a0900] sm:max-w-md"
         >
-          {detailLoading || !detail ? (
-            <div className="space-y-4 p-6">
-              <Skeleton className="h-6 w-40" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-32 w-full rounded-2xl" />
-            </div>
-          ) : (
+           {detailLoading || !detail ? (
+             <div className="space-y-4 p-6">
+               <SheetTitle className="sr-only">Loading delivery details</SheetTitle>
+               <Skeleton className="h-6 w-40" />
+               <Skeleton className="h-4 w-full" />
+               <Skeleton className="h-4 w-3/4" />
+               <Skeleton className="h-32 w-full rounded-2xl" />
+             </div>
+           ) : (
             <div className="p-6">
               <SheetHeader className="text-left">
                 <div className="flex items-center justify-between gap-2">

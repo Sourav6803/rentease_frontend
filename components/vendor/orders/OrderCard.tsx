@@ -18,6 +18,8 @@ interface OrderCardProps {
 export function OrderCard({ rental, onViewDetails, onAction }: OrderCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const config = STATUS_CONFIG[rental.status]
+
+  console.log('rental-->', rental)
   
   const primaryImage = rental.product.media.images?.find(img => img.isPrimary) || rental.product.media.images?.[0]
   
