@@ -12,7 +12,7 @@ import {
   Package, Truck, CheckCircle, XCircle, Clock, MapPin, CreditCard,
   AlertCircle, Download, RefreshCw, RotateCcw, AlertTriangle,
   MessageCircle, Phone, Mail, Home, Zap, ArrowLeft, Wallet, Receipt,
-  LucideIcon, HelpCircle,
+  LucideIcon, HelpCircle, Star, Paperclip, Video, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import axios, { AxiosError } from 'axios'
@@ -134,6 +134,17 @@ interface Rental {
   cancellation?: { reason: string; cancellationCharge: number; refundAmount: number; status: string }
   delivery?: { scheduledDate?: string; actualDate?: string; status: string; trackingNumber?: string }
   pickup?: { scheduledDate?: string; actualDate?: string; status: string }
+  reviews?: { user?: Review | null; vendor?: Review | null }
+}
+
+interface Review {
+  _id: string
+  ratings: { overall: number }
+  title: string
+  content: string
+  attachments?: Array<{ type: 'image' | 'video'; url: string; caption?: string }>
+  moderation?: { status: string }
+  createdAt: string
 }
 
 // ─── Status Configuration ────────────────────────────────────────────────────
@@ -273,6 +284,7 @@ export default function RentalDetailsPage() {
   const [showReturnDialog, setShowReturnDialog] = useState(false)
   const [showContactDialog, setShowContactDialog] = useState(false)
   const [showDamageDialog, setShowDamageDialog] = useState(false)
+  const [showReviewDialog, setShowReviewDialog] = useState(false)
 
   const [cancelReason, setCancelReason] = useState('')
   const [extensionMonths, setExtensionMonths] = useState(1)
@@ -282,6 +294,11 @@ export default function RentalDetailsPage() {
   const [returnSlot] = useState('')
   const [damageDescription, setDamageDescription] = useState('')
   const [damageImages, setDamageImages] = useState<File[]>([])
+  const [reviewRating, setReviewRating] = useState(0)
+  const [reviewTitle, setReviewTitle] = useState('')
+  const [reviewContent, setReviewContent] = useState('')
+  const [reviewMedia, setReviewMedia] = useState<File[]>([])
+  const [reviewMediaPreviews, setReviewMediaPreviews] = useState<string[]>([])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -313,6 +330,12 @@ export default function RentalDetailsPage() {
 
   useEffect(() => { fetchRental() }, [fetchRental])
 
+  useEffect(() => {
+    const urls = reviewMedia.map(file => URL.createObjectURL(file))
+    setReviewMediaPreviews(urls)
+    return () => urls.forEach(url => URL.revokeObjectURL(url))
+  }, [reviewMedia])
+
   const handleCancelRental = async () => {
     if (!rental) return
     setIsSubmitting(true)
@@ -323,7 +346,7 @@ export default function RentalDetailsPage() {
       )
       if (response.data.success) { toast.success('Rental cancelled successfully'); setShowCancelDialog(false); fetchRental() }
     } catch (error) {
-      const axiosError = error as AxiosError<any>
+      const axiosError = error as AxiosError<{ message?: string }>
       toast.error(axiosError.response?.data?.message || 'Failed to cancel rental')
     } finally { setIsSubmitting(false) }
   }
@@ -364,6 +387,69 @@ export default function RentalDetailsPage() {
     setShowInvoiceModal(true)
   }
 
+  const handleSubmitReview = async () => {
+    if (!rental || reviewRating < 1 || reviewTitle.trim().length < 3 || reviewContent.trim().length < 10) {
+      toast.error('Please provide a rating, a title, and at least 10 characters of feedback')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const formData = new FormData()
+      formData.append('rentalId', rental._id)
+      formData.append('ratings[overall]', String(reviewRating))
+      formData.append('title', reviewTitle.trim())
+      formData.append('content', reviewContent.trim())
+      reviewMedia.forEach(file => formData.append('media', file))
+
+      const request = existingReview
+        ? axios.put(`${BASE_URL}/api/v1/reviews/${existingReview._id}`, formData, {
+          headers: { Authorization: `Bearer ${session?.user?.accessToken}` },
+        })
+        : axios.post(`${BASE_URL}/api/v1/reviews`, formData, {
+          headers: { Authorization: `Bearer ${session?.user?.accessToken}` },
+        })
+
+      await request
+      toast.success(existingReview ? 'Your review was updated and sent for moderation' : 'Thanks for sharing your review')
+      setShowReviewDialog(false)
+      setReviewRating(0)
+      setReviewTitle('')
+      setReviewContent('')
+      setReviewMedia([])
+      fetchRental()
+    } catch (error) {
+      const axiosError = error as AxiosError<{ message?: string }>
+      toast.error(axiosError.response?.data?.message || 'Unable to submit your review')
+    } finally { setIsSubmitting(false) }
+  }
+
+  const openReviewDialog = () => {
+    if (existingReview) {
+      setReviewRating(existingReview.ratings.overall)
+      setReviewTitle(existingReview.title)
+      setReviewContent(existingReview.content)
+    } else {
+      setReviewRating(0)
+      setReviewTitle('')
+      setReviewContent('')
+    }
+    setReviewMedia([])
+    setShowReviewDialog(true)
+  }
+
+  const handleReviewMediaChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files || [])
+    const valid = selected.filter(file => file.type.startsWith('image/') || file.type.startsWith('video/'))
+    if (valid.length !== selected.length) toast.error('Only image and video files are supported')
+    if (reviewMedia.length + valid.length > 5) {
+      toast.error('You can attach up to 5 files')
+      return
+    }
+    setReviewMedia(current => [...current, ...valid])
+    event.target.value = ''
+  }
+
   if (status === 'loading' || isLoading) return <RentalDetailsSkeleton />
   if (!rental) return null
 
@@ -378,6 +464,8 @@ export default function RentalDetailsPage() {
   const showExtend = rental.status === 'active' && !isOverdue
   const showReturn = rental.status === 'active'
   const showContact = true
+  const existingReview = rental.reviews?.user
+  const canReview = ['delivered', 'active', 'completed'].includes(rental.status)
 
   const extensionCost = rental.rentalDetails.monthlyRent * extensionMonths
 
@@ -698,6 +786,20 @@ export default function RentalDetailsPage() {
                     <MessageCircle className="h-4 w-4 text-blue-600" />Contact Support
                   </Button>
                 )}
+                {canReview && (
+                  <Button className={`w-full justify-start gap-3 ${PRIMARY_BTN}`} onClick={openReviewDialog}>
+                    <Star className="h-4 w-4" />{existingReview ? 'Update your review' : 'Rate your experience'}
+                  </Button>
+                )}
+                {existingReview && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                    <div className="flex items-center gap-1 text-emerald-700">
+                      <Star className="h-4 w-4 fill-current" />
+                      <span className="text-sm font-semibold">You rated {existingReview.ratings.overall}/5</span>
+                    </div>
+                    <p className="mt-1 text-xs text-emerald-700">Your review has been submitted for moderation.</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -721,6 +823,90 @@ export default function RentalDetailsPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-lg bg-white border-slate-200 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-slate-900">{existingReview ? 'Update your review' : 'Rate your rental experience'}</DialogTitle>
+            <DialogDescription className="text-slate-500">
+              {existingReview ? 'Update your feedback. Changes will be reviewed before being published again.' : `Tell us about ${rental.product.basicInfo.name}. Your review helps other renters make better choices.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            <div>
+              <Label className="text-slate-700">Overall rating *</Label>
+              <div className="mt-2 flex gap-2" role="radiogroup" aria-label="Overall rating">
+                {[1, 2, 3, 4, 5].map(rating => (
+                  <button
+                    key={rating}
+                    type="button"
+                    aria-label={`${rating} star${rating === 1 ? '' : 's'}`}
+                    aria-pressed={reviewRating === rating}
+                    onClick={() => setReviewRating(rating)}
+                    className="rounded-md p-1 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  >
+                    <Star className={`h-8 w-8 ${reviewRating >= rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="review-title" className="text-slate-700">Review title *</Label>
+              <Input id="review-title" value={reviewTitle} maxLength={100} onChange={e => setReviewTitle(e.target.value)} placeholder="What stood out?" className="mt-1.5 border-slate-200" />
+              <p className="mt-1 text-right text-xs text-slate-400">{reviewTitle.length}/100</p>
+            </div>
+            <div>
+              <Label htmlFor="review-content" className="text-slate-700">Your feedback *</Label>
+              <Textarea id="review-content" value={reviewContent} maxLength={2000} onChange={e => setReviewContent(e.target.value)} placeholder="Share your experience with the product and delivery..." rows={5} className="mt-1.5 border-slate-200" />
+              <p className="mt-1 text-right text-xs text-slate-400">{reviewContent.length}/2000</p>
+            </div>
+            <div>
+              <Label htmlFor="review-media" className="text-slate-700">Photos or videos <span className="font-normal text-slate-400">(optional, up to 5)</span></Label>
+              {existingReview?.attachments?.length ? (
+                <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-medium text-slate-500">Current attachments</p>
+                  <div className="mt-2 flex gap-2 overflow-x-auto">
+                    {existingReview.attachments.map((media, index) => (
+                      media.type === 'video' ? (
+                        <video key={index} src={media.url} controls className="h-16 w-24 shrink-0 rounded-md object-cover" />
+                      ) : (
+                        <img key={index} src={media.url} alt={media.caption || 'Current review attachment'} className="h-16 w-16 shrink-0 rounded-md object-cover" />
+                      )
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <label htmlFor="review-media" className="mt-1.5 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-4 py-4 text-sm font-medium text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50">
+                <Paperclip className="h-4 w-4 text-blue-600" />Add rental photos or videos
+              </label>
+              <input id="review-media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" multiple className="sr-only" onChange={handleReviewMediaChange} />
+              {reviewMedia.length > 0 && (
+                <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                  {reviewMedia.map((file, index) => (
+                    <div key={`${file.name}-${index}`} className="group relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                      {file.type.startsWith('video/') ? (
+                        <Video className="absolute inset-0 m-auto h-7 w-7 text-blue-600" />
+                      ) : (
+                        <img src={reviewMediaPreviews[index]} alt={file.name} className="h-full w-full object-cover" />
+                      )}
+                      <button type="button" aria-label={`Remove ${file.name}`} onClick={() => setReviewMedia(current => current.filter((_, itemIndex) => itemIndex !== index))} className="absolute right-1 top-1 rounded-full bg-slate-900/75 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="mt-1 text-xs text-slate-400">Images are optimized automatically. Maximum 50 MB per file.</p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setShowReviewDialog(false)} disabled={isSubmitting} className="border-slate-200 text-slate-700">Cancel</Button>
+            <Button onClick={handleSubmitReview} disabled={isSubmitting || reviewRating < 1 || reviewTitle.trim().length < 3 || reviewContent.trim().length < 10} className={PRIMARY_BTN}>
+              {isSubmitting ? 'Saving...' : existingReview ? 'Update review' : 'Submit review'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Cancel Dialog */}
       <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>

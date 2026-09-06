@@ -254,19 +254,34 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
-import { Heart, ShoppingCart, Star, TrendingUp, ShieldCheck, Package } from 'lucide-react'
+import { Heart, ShoppingCart, Star, TrendingUp, ShieldCheck, Package, Loader2, CheckCircle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/useToast'
 import { useSession } from 'next-auth/react'
-import axios from 'axios'
+import { addToWishlist, removeFromWishlist } from '@/lib/api/behavior'
+import { useBehaviorTracking } from '@/hooks/useBehaviorTracking'
+import { useCart } from '@/hooks/useCart'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 interface ProductCardProps {
   product: {
     _id: string
     basicInfo: { name: string; slug: string }
-    pricing: { monthlyRent: number; securityDeposit: number }
+    pricing: {
+      monthlyRent: number
+      securityDeposit: number
+      rentalOptions?: Array<{ months: number; discount?: number; monthlyPrice?: number; totalPrice?: number }>
+    }
+    rentalTerms?: { minRentalMonths?: number; maxRentalMonths?: number }
     media?: { images?: Array<{ url: string; isPrimary: boolean }> }
     ratings?: { average: number; count: number }
     condition?: string
@@ -274,7 +289,12 @@ interface ProductCardProps {
   variant?: 'default' | 'compact' | 'trending' | 'list'
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
+type RentalOption = {
+  months: number
+  discount?: number
+  monthlyPrice?: number
+  totalPrice?: number
+}
 
 // Shared premium button style — blue gradient, never black
 const CART_BTN =
@@ -307,51 +327,125 @@ export function ProductCard({ product, variant = 'default' }: ProductCardProps) 
   const [isLoading, setIsLoading] = useState(false)
   const { data: session } = useSession()
   const toast = useToast()
+  const { trackEvent } = useBehaviorTracking()
+  const { addToCart } = useCart()
+  const [isDurationOpen, setIsDurationOpen] = useState(false)
+  const [selectedMonths, setSelectedMonths] = useState<number | null>(null)
 
   const primaryImage = product.media?.images?.find(img => img.isPrimary)?.url || product.media?.images?.[0]?.url
   const rating = product.ratings?.average || 0
   const reviewCount = product.ratings?.count || 0
 
-  const handleAddToCart = async (e: React.MouseEvent) => {
+  const durationOptions: RentalOption[] = product.pricing.rentalOptions?.length
+    ? product.pricing.rentalOptions
+    : [3, 6, 9, 12].map(months => ({ months }))
+  const minMonths = product.rentalTerms?.minRentalMonths ?? 1
+  const maxMonths = product.rentalTerms?.maxRentalMonths ?? 36
+  const availableDurations = durationOptions.filter(option => option.months >= minMonths && option.months <= maxMonths)
+
+  const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     if (!session) {
       toast.error('Please login to add items to cart')
       return
     }
+    setSelectedMonths(null)
+    setIsDurationOpen(true)
+  }
+
+  const confirmAddToCart = async () => {
+    if (!selectedMonths) return
     setIsLoading(true)
-    try {
-      await axios.post(`${BASE_URL}/api/v1/cart/add`, { productId: product._id, quantity: 1 })
-      toast.success('Added to cart')
-    } catch (error) {
-      toast.error('Failed to add to cart')
-    } finally {
-      setIsLoading(false)
+    const added = await addToCart(product._id, 1, selectedMonths)
+    if (added) {
+      trackEvent('add_to_cart', { productId: product._id })
+      setIsDurationOpen(false)
     }
+    setIsLoading(false)
   }
 
   const handleWishlist = async (e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     if (!session) {
       toast.error('Please login to add to wishlist')
       return
     }
     try {
       if (isWishlisted) {
-        await axios.delete(`${BASE_URL}/api/v1/wishlist/${product._id}`)
+        await removeFromWishlist(product._id)
         toast.success('Removed from wishlist')
+        setIsWishlisted(false)
+        trackEvent('remove_from_wishlist', { productId: product._id })
       } else {
-        await axios.post(`${BASE_URL}/api/v1/wishlist/add`, { productId: product._id })
+        await addToWishlist(product._id)
         toast.success('Added to wishlist')
+        setIsWishlisted(true)
+        trackEvent('add_to_wishlist', { productId: product._id })
       }
-      setIsWishlisted(!isWishlisted)
-    } catch (error) {
+    } catch {
       toast.error('Failed to update wishlist')
     }
   }
 
+  const durationDialog = (
+    <Dialog open={isDurationOpen} onOpenChange={setIsDurationOpen}>
+      <DialogContent className="max-h-[calc(100dvh-1.5rem)] max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-2xl border-blue-100 p-0 shadow-2xl shadow-blue-950/20 sm:max-w-sm">
+        <div className="h-1 bg-gradient-to-r from-cyan-400 via-blue-600 to-violet-600" />
+        <DialogHeader className="bg-gradient-to-br from-cyan-50 via-white to-violet-50 px-4 pt-4 pb-3 sm:px-5">
+          <DialogTitle className="pr-8 text-lg font-extrabold tracking-tight text-slate-900 sm:text-xl">Choose rental duration</DialogTitle>
+          <DialogDescription className="text-xs leading-relaxed text-slate-500 sm:text-sm">
+            Select a plan for <span className="font-semibold text-blue-700">{product.basicInfo.name}</span>.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 px-4 py-4 sm:px-5">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {availableDurations.map(option => {
+              const monthlyPrice = option.monthlyPrice ?? product.pricing.monthlyRent
+              const totalPrice = option.totalPrice ?? monthlyPrice * option.months
+              const isSelected = selectedMonths === option.months
+              return (
+                <button
+                  key={option.months}
+                  type="button"
+                  onClick={() => setSelectedMonths(option.months)}
+                  className={`relative rounded-xl border-2 px-2 py-2.5 text-center transition-all ${
+                    isSelected ? 'border-blue-600 bg-gradient-to-br from-blue-50 to-violet-50 shadow-md shadow-blue-500/10' : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-cyan-50/40'
+                  }`}
+                >
+                  {option.discount ? <span className="absolute -top-2 right-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{option.discount}% off</span> : null}
+                  <div className="text-lg font-extrabold text-blue-950">{option.months}</div>
+                  <div className="text-[11px] text-slate-400">months</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-600">₹{monthlyPrice.toLocaleString('en-IN')}/mo</div>
+                  <div className="mt-1 text-[10px] text-slate-400">₹{totalPrice.toLocaleString('en-IN')} total</div>
+                </button>
+              )
+            })}
+          </div>
+          {!availableDurations.length && (
+            <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">Rental duration options are currently unavailable. Please open the product to see the latest terms.</p>
+          )}
+          <div className="flex items-start gap-2 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-cyan-50 p-2.5 text-[11px] leading-relaxed text-emerald-800 sm:text-xs">
+            <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Security deposit of ₹{product.pricing.securityDeposit.toLocaleString('en-IN')} is refundable as per rental terms.</span>
+          </div>
+        </div>
+        <DialogFooter className="border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/70 px-4 py-3 sm:px-5">
+          <Button type="button" variant="outline" onClick={() => setIsDurationOpen(false)} className="w-full sm:w-auto">Cancel</Button>
+          <Button type="button" onClick={confirmAddToCart} disabled={!selectedMonths || isLoading} className={`w-full gap-2 sm:w-auto ${CART_BTN}`}>
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+            {isLoading ? 'Adding...' : 'Add to cart'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
   // ── Compact variant ─────────────────────────────────────────────────────
   if (variant === 'compact') {
     return (
+      <>
       <Link href={`/products/${product.basicInfo.slug}`}>
         <Card className="group cursor-pointer border border-slate-200/70 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300 overflow-hidden rounded-xl">
           <CardContent className="p-0">
@@ -387,12 +481,15 @@ export function ProductCard({ product, variant = 'default' }: ProductCardProps) 
           </CardContent>
         </Card>
       </Link>
+      {durationDialog}
+      </>
     )
   }
 
   // ── List variant ────────────────────────────────────────────────────────
   if (variant === 'list') {
     return (
+      <>
       <Link href={`/products/${product.basicInfo.slug}`}>
         <Card className="group cursor-pointer border border-slate-200/70 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300 overflow-hidden rounded-xl">
           <CardContent className="p-0">
@@ -430,11 +527,14 @@ export function ProductCard({ product, variant = 'default' }: ProductCardProps) 
           </CardContent>
         </Card>
       </Link>
+      {durationDialog}
+      </>
     )
   }
 
   // ── Default / trending variant ──────────────────────────────────────────
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -522,5 +622,7 @@ export function ProductCard({ product, variant = 'default' }: ProductCardProps) 
         </Card>
       </Link>
     </motion.div>
+    {durationDialog}
+    </>
   )
 }

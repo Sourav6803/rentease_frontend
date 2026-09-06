@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ShieldCheck, ShieldX, Flag } from 'lucide-react';
@@ -52,14 +52,6 @@ export function ModerateDialog({ review, defaultAction = 'approved', open, onOpe
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const queryClient = useQueryClient();
-
-  useEffect(() => {
-    if (open) {
-      setAction(defaultAction);
-      setReason('');
-      setNotes('');
-    }
-  }, [open, defaultAction]);
 
   const mutation = useMutation({
     mutationFn: async () => {

@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { computeRentalPayableFromCart, loadRazorpayScript } from '@/lib/checkoutPayment'
 import { applyCartCoupon, removeCartCoupon } from '@/lib/api/coupons'
+import { useBehaviorTracking } from '@/hooks/useBehaviorTracking'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -669,6 +670,7 @@ type CheckoutStep = 'address' | 'slot' | 'payment'
 export default function CheckoutPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const { trackEvent } = useBehaviorTracking()
 
   const [cart, setCart] = useState<Cart | null>(null)
   const [addresses, setAddresses] = useState<Address[]>([])
@@ -777,6 +779,10 @@ export default function CheckoutPage() {
 
     const token = await getToken()
     // if (!token) { toast.error('Session expired'); router.push('/login?callbackUrl=/checkout'); return }
+
+    trackEvent('checkout_started', {
+      metadata: { cartValue: cart.summary?.grandTotal },
+    }).catch(() => {})
 
     // Razorpay key — must be defined in .env.local as NEXT_PUBLIC_RAZORPAY_KEY_ID
     const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID

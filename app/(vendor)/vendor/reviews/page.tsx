@@ -30,6 +30,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { toast } from 'sonner'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   Pagination,
   PaginationContent,
@@ -244,7 +245,8 @@ export default function VendorReviewsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 lg:p-6">
+    <TooltipProvider>
+      <div className="mx-auto max-w-6xl space-y-4 p-4 lg:p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Reviews</h1>
@@ -342,6 +344,7 @@ export default function VendorReviewsPage() {
           </div>
         </>
       )}
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }

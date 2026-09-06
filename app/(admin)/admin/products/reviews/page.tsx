@@ -24,20 +24,23 @@
 import { Suspense } from 'react';
 import { ReviewModerationTabs } from '@/components/admin/reviews/ReviewModerationTabs';
 import { AdminReviewsSkeleton } from '@/components/admin/reviews/AdminReviewsSkeleton';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 export default function AdminReviewsPage() {
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Product reviews</h1>
-        <p className="text-sm text-muted-foreground">
-          Triage the pending queue, resolve reported reviews, and moderate in bulk.
-        </p>
-      </div>
+    <TooltipProvider>
+      <div className="space-y-6 p-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Product reviews</h1>
+          <p className="text-sm text-muted-foreground">
+            Triage the pending queue, resolve reported reviews, and moderate in bulk.
+          </p>
+        </div>
 
-      <Suspense fallback={<AdminReviewsSkeleton />}>
-        <ReviewModerationTabs />
-      </Suspense>
-    </div>
+        <Suspense fallback={<AdminReviewsSkeleton />}>
+          <ReviewModerationTabs />
+        </Suspense>
+      </div>
+    </TooltipProvider>
   );
 }

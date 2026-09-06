@@ -37,6 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { applyCartCoupon, removeCartCoupon, getPublicCoupons, type PublicCoupon } from '@/lib/api/coupons'
 import { useCart } from '@/hooks/useCart'
+import { useBehaviorTracking } from '@/hooks/useBehaviorTracking'
 
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -727,7 +728,12 @@ export default function CartPage() {
   const router = useRouter()
   // Shared cart context — mutations here update the header badge instantly.
   const { cart, isLoading, updateCartItem, removeCartItem, setCart } = useCart()
+  const { trackPageView } = useBehaviorTracking()
   const [isUpdating, setIsUpdating] = useState(false)
+
+  useEffect(() => {
+    trackPageView('/cart')
+  }, [trackPageView])
 
   const handleUpdateItem = useCallback(
     async (itemId: string, data: { quantity?: number; rentalMonths?: number }) => {

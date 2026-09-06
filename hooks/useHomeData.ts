@@ -10,7 +10,13 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 export interface HomeProduct {
   _id: string
   basicInfo: { name: string; slug: string; brand?: string }
-  pricing: { monthlyRent: number; securityDeposit: number; originalPrice?: number }
+  pricing: {
+    monthlyRent: number
+    securityDeposit: number
+    originalPrice?: number
+    rentalOptions?: Array<{ months: number; discount?: number; monthlyPrice?: number; totalPrice?: number }>
+  }
+  rentalTerms?: { minRentalMonths?: number; maxRentalMonths?: number }
   media?: { images?: Array<{ url: string; isPrimary: boolean }> }
   ratings?: { average: number; count: number }
   condition?: string

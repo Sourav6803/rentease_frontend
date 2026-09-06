@@ -55,12 +55,10 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Input } from '@/components/ui/input'
 import { getPublicCoupons, type PublicCoupon } from '@/lib/api/coupons'
 import { useCart } from '@/hooks/useCart'
+import { useBehaviorTracking } from '@/hooks/useBehaviorTracking'
+import { addToWishlist, removeFromWishlist } from '@/lib/api/behavior'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -108,13 +106,13 @@ interface Product {
 interface Review {
   _id: string
   user: { _id: string; profile?: { firstName?: string; lastName?: string; avatar?: string } }
-  rating: number
+  ratings: { overall: number }
   title?: string
   content?: string
-  images?: string[]
-  helpful?: number
+  attachments?: Array<{ type: 'image' | 'video'; url: string; caption?: string }>
+  helpful?: { count: number }
   createdAt: string
-  vendorResponse?: { content: string; createdAt: string; vendor?: { name: string } }
+  responses?: Array<{ content: string; createdAt: string; isVendorResponse: boolean }>
 }
 
 interface ReviewSummary {
@@ -171,7 +169,7 @@ const getInitials = (firstName?: string, lastName?: string) => {
   return (first + last).toUpperCase() || 'U'
 }
 
-const ProductGallery = ({ images }: { images?: Array<{ url: string; thumbnail: string; isPrimary: boolean; _id?: string }> }) => {
+const ProductGallery = ({ images, onZoom }: { images?: Array<{ url: string; thumbnail: string; isPrimary: boolean; _id?: string }>; onZoom?: () => void }) => {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [isZoomed, setIsZoomed] = useState(false)
   const safeImages = images?.filter(img => img?.url) || []
@@ -188,7 +186,7 @@ const ProductGallery = ({ images }: { images?: Array<{ url: string; thumbnail: s
     <div className="space-y-3">
       <div
         className="relative aspect-square rounded-2xl overflow-hidden bg-slate-100 cursor-zoom-in"
-        onMouseEnter={() => setIsZoomed(true)}
+        onMouseEnter={() => { setIsZoomed(true); onZoom?.() }}
         onMouseLeave={() => setIsZoomed(false)}
       >
         <img
@@ -429,7 +427,7 @@ const ReviewsList = ({ reviews, onHelpful, onReport }: {
                   <div className="font-semibold text-sm text-slate-900">
                     {review.user?.profile?.firstName || 'User'} {review.user?.profile?.lastName || ''}
                   </div>
-                  <StarRating rating={review.rating} size={12} />
+                    <StarRating rating={review.ratings?.overall || 0} size={12} />
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -445,27 +443,31 @@ const ReviewsList = ({ reviews, onHelpful, onReport }: {
             {review.title && <div className="font-semibold text-base text-slate-900 mb-1">{review.title}</div>}
             {review.content && <div className="text-sm text-slate-600 leading-relaxed">{review.content}</div>}
 
-            {review.images?.length ? (
+            {review.attachments?.length ? (
               <div className="flex gap-2 mt-3">
-                {review.images.slice(0, 3).map((img, i) => (
-                  <img key={i} src={img} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-200" />
+                {review.attachments.slice(0, 3).map((media, i) => (
+                  media.type === 'video' ? (
+                    <video key={i} src={media.url} controls className="w-28 h-16 rounded-lg object-cover border border-slate-200" />
+                  ) : (
+                    <img key={i} src={media.url} alt={media.caption || 'Customer review'} className="w-16 h-16 rounded-lg object-cover border border-slate-200" />
+                  )
                 ))}
               </div>
             ) : null}
 
-            {review.vendorResponse && (
-              <div className="mt-3 p-3 bg-blue-50 rounded-lg border-l-[3px] border-l-blue-600">
+            {review.responses?.filter(response => response.isVendorResponse).map(response => (
+              <div key={`${review._id}-${response.createdAt}`} className="mt-3 p-3 bg-blue-50 rounded-lg border-l-[3px] border-l-blue-600">
                 <div className="text-xs font-bold text-blue-700 mb-1">
-                  VENDOR RESPONSE · {review.vendorResponse.vendor?.name || 'Vendor'}
+                  VENDOR RESPONSE
                 </div>
-                <div className="text-sm text-slate-700">{review.vendorResponse.content}</div>
+                <div className="text-sm text-slate-700">{response.content}</div>
               </div>
-            )}
+            ))}
 
             <div className="mt-3">
               <Button variant="outline" size="sm" className="text-xs gap-1 border-slate-200" onClick={() => onHelpful(review._id)}>
                 <ThumbsUp className="w-3 h-3" />
-                Helpful {review.helpful && review.helpful > 0 ? `(${review.helpful})` : ''}
+                Helpful {review.helpful?.count ? `(${review.helpful.count})` : ''}
               </Button>
             </div>
           </CardContent>
@@ -813,6 +815,7 @@ export default function ProductDetailsPage() {
   const router = useRouter()
   const { data: session } = useSession()
   const { addToCart: addToCartCtx, isInCart } = useCart()
+  const { trackEvent, trackPageView, trackScroll, resetScrollTracking } = useBehaviorTracking()
   const slug = params.slug as string
 
   const [product, setProduct] = useState<Product | null>(null)
@@ -828,8 +831,6 @@ export default function ProductDetailsPage() {
   const [activeTab, setActiveTab] = useState('description')
   const [shareUrl, setShareUrl] = useState('')
   const [isCopied, setIsCopied] = useState(false)
-  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false)
-  const [newReview, setNewReview] = useState({ rating: 0, title: '', content: '' })
 
   useEffect(() => { setShareUrl(window.location.href) }, [])
 
@@ -864,9 +865,9 @@ export default function ProductDetailsPage() {
         if (reviewsData?.distribution) {
           setSummary({
             distribution: reviewsData.distribution,
-            total: reviewsData.pagination?.total || 0,
+            total: reviewsData.summary?.totalReviews || reviewsData.pagination?.total || 0,
             average: Object.entries(reviewsData.distribution).reduce((acc, [stars, count]) =>
-              acc + (parseInt(stars) * (count as number)), 0) / (reviewsData.pagination?.total || 1),
+              acc + (parseInt(stars) * (count as number)), 0) / (reviewsData.summary?.totalReviews || reviewsData.pagination?.total || 1),
             sentiment: reviewsData.summary?.sentiment,
           })
         } else {
@@ -876,8 +877,14 @@ export default function ProductDetailsPage() {
         setSummary({ distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, total: 0, average: 0 })
       }
 
-      if (summaryRes.data.success && summaryRes.data.data?.average) {
-        setSummary(prev => ({ ...prev, average: summaryRes.data.data.average, ...summaryRes.data.data }))
+      if (summaryRes.data.success && summaryRes.data.data) {
+        const productSummary = summaryRes.data.data
+        setSummary(prev => ({
+          ...prev,
+          average: productSummary.averageRating || 0,
+          total: productSummary.totalReviews || 0,
+          sentiment: productSummary.sentiment,
+        }))
       }
 
       if (relatedRes.data.success) setRelated(relatedRes.data.data?.products || [])
@@ -902,6 +909,31 @@ export default function ProductDetailsPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  useEffect(() => {
+    trackPageView(`/products/${slug}`)
+  }, [slug, trackPageView])
+
+  useEffect(() => {
+    if (product) {
+      trackEvent('product_view', { productId: product._id, categoryId: product.category?._id })
+    }
+    return () => {
+      resetScrollTracking()
+    }
+  }, [product, trackEvent, trackPageView, resetScrollTracking])
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!product) return
+      const scrollTop = window.scrollY || document.documentElement.scrollTop
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight
+      const depth = docHeight > 0 ? Math.round((scrollTop / docHeight) * 100) : 0
+      trackScroll(product._id, depth)
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [product, trackScroll])
+
   const handleAddToCart = async () => {
     if (!session) { toast.error('Please login to continue'); router.push('/login'); return }
     if (!selectedTenure) { toast.error('Please select a rental duration'); return }
@@ -909,9 +941,8 @@ export default function ProductDetailsPage() {
 
     setIsAddingToCart(true)
     try {
-      // Delegate to the shared cart context so the header badge and any other
-      // cart consumers update instantly (no page refresh needed).
       await addToCartCtx(product._id, quantity, selectedTenure)
+      trackEvent('add_to_cart', { productId: product._id })
     } finally {
       setIsAddingToCart(false)
     }
@@ -922,13 +953,15 @@ export default function ProductDetailsPage() {
     if (!product) return
     try {
       if (isWishlisted) {
-        await axios.delete(`${BASE_URL}/api/v1/wishlist/${product._id}`, { headers: { Authorization: `Bearer ${session.user?.accessToken}` } })
+        await removeFromWishlist(product._id)
         toast.success('Removed from wishlist')
         setIsWishlisted(false)
+        trackEvent('remove_from_wishlist', { productId: product._id })
       } else {
-        await axios.post(`${BASE_URL}/api/v1/wishlist/add`, { productId: product._id }, { headers: { Authorization: `Bearer ${session.user?.accessToken}` } })
+        await addToWishlist(product._id)
         toast.success('Added to wishlist')
         setIsWishlisted(true)
+        trackEvent('add_to_wishlist', { productId: product._id })
       }
     } catch (error) {
       toast.error('Failed to update wishlist')
@@ -965,22 +998,6 @@ export default function ProductDetailsPage() {
     toast.success('Link copied to clipboard!')
   }
 
-  const submitReview = async () => {
-    if (!session) { toast.error('Please login to continue'); return }
-    if (newReview.rating === 0) { toast.error('Please select a rating'); return }
-    if (!product) return
-    try {
-     // await axios.post(`${BASE_URL}/api/v1/reviews/product/${product._id}`, newReview, { headers: { Authorization: `Bearer ${session.user?.accessToken}` } })
-      await axios.post(`${BASE_URL}/api/v1/reviews/product/${product._id}`, newReview, { headers: { Authorization: `Bearer ${session.user?.accessToken}` } })
-      toast.success('Review submitted successfully!')
-      setIsReviewModalOpen(false)
-      setNewReview({ rating: 0, title: '', content: '' })
-      fetchAll()
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to submit review')
-    }
-  }
-
   if (loading) return <PDPSkeleton />
   if (!product) return null
 
@@ -1006,7 +1023,7 @@ export default function ProductDetailsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         {/* Gallery */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-          <ProductGallery images={product.media?.images} />
+          <ProductGallery images={product.media?.images} onZoom={() => trackEvent('product_zoom', { productId: product._id })} />
           <div className="flex items-center justify-between mt-4 px-1 flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Eye className="w-4 h-4 text-slate-400" />
@@ -1221,10 +1238,6 @@ export default function ProductDetailsPage() {
               <motion.div key="reviews" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-8">
                 <div className="space-y-4">
                   <ReviewSummaryPanel summary={summary} />
-                  <Button className={`w-full gap-2 ${PRIMARY_BTN}`} onClick={() => setIsReviewModalOpen(true)}>
-                    <MessageCircle className="w-4 h-4" />
-                    Write a Review
-                  </Button>
                 </div>
                 <div><ReviewsList reviews={reviews} onHelpful={markHelpful} onReport={reportReview} /></div>
               </motion.div>
@@ -1264,36 +1277,6 @@ export default function ProductDetailsPage() {
         )}
       </div>
 
-      {/* Write Review Dialog */}
-      <Dialog open={isReviewModalOpen} onOpenChange={setIsReviewModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Write a Review</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label>Your Rating</Label>
-              <div className="flex gap-2 mt-2">
-                {[1, 2, 3, 4, 5].map(star => (
-                  <button key={star} onClick={() => setNewReview(prev => ({ ...prev, rating: star }))} className="focus:outline-none">
-                    <Star className={`w-7 h-7 ${star <= newReview.rating ? 'fill-amber-500 text-amber-500' : 'text-slate-300'}`} />
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="review-title">Title</Label>
-              <Input id="review-title" placeholder="Summarise your experience" value={newReview.title} onChange={e => setNewReview(prev => ({ ...prev, title: e.target.value }))} className="mt-1" />
-            </div>
-            <div>
-              <Label htmlFor="review-content">Review</Label>
-              <Textarea id="review-content" placeholder="Share details about your rental experience..." rows={4} value={newReview.content} onChange={e => setNewReview(prev => ({ ...prev, content: e.target.value }))} className="mt-1" />
-            </div>
-            <div className="flex gap-3 pt-2">
-              <Button variant="outline" className="flex-1 border-slate-200" onClick={() => setIsReviewModalOpen(false)}>Cancel</Button>
-              <Button className={`flex-[2] ${PRIMARY_BTN}`} onClick={submitReview}>Submit Review</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

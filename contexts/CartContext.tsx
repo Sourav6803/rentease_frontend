@@ -12,6 +12,7 @@ import {
 import { getSession, useSession } from 'next-auth/react'
 import axios from 'axios'
 import { toast } from 'sonner'
+import { trackEvent } from '@/lib/api/behavior'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -136,6 +137,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (response.data.success) {
         applyCart(response.data.data.cart)
         toast.success('Item added to cart')
+        trackEvent({ eventType: 'add_to_cart', productId })
         return true
       }
     } catch (error: any) {
@@ -177,6 +179,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (response.data.success) {
         applyCart(response.data.data.cart)
         toast.success('Item removed from cart')
+        trackEvent({ eventType: 'remove_from_cart' })
         return true
       }
     } catch (error) {
@@ -196,6 +199,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       })
       applyCart(null)
       toast.success('Cart cleared')
+      trackEvent({ eventType: 'remove_from_cart' })
       return true
     } catch (error) {
       console.error('Error clearing cart:', error)

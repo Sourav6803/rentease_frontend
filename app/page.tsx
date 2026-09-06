@@ -4,6 +4,7 @@
 import { TrendingUp, Zap, Sparkles, Clock, Flame } from 'lucide-react'
 
 import { useHomeData } from '@/hooks/useHomeData'
+import { useEffect } from 'react'
 
 // New premium home sections
 import { HeroCarousel } from '@/components/home/HeroCarousel'
@@ -21,11 +22,17 @@ import { ServiceStrip } from '@/components/home/ServiceStrip'
 import { BrandStrip } from '@/components/home/BrandStrip'
 import { Newsletter } from '@/components/home/Newsletter'
 import { AIChatAssistant } from '@/components/ui/AIChatAssistant'
+import { useBehaviorTracking } from '@/hooks/useBehaviorTracking'
 
 export default function Home() {
   const {
     banners, featured, trending, newArrivals, mostPopular, recommendations, categories, isLoading,
   } = useHomeData()
+  const { trackPageView } = useBehaviorTracking()
+
+  useEffect(() => {
+    trackPageView('/')
+  }, [trackPageView])
 
   return (
     <main className="min-h-screen bg-background accent-transition">

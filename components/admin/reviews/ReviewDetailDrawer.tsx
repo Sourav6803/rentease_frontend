@@ -12,7 +12,6 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
 import { StarRating } from './StarRating';
 import { ModerateDialog } from './ModerateDialog';
 import { adminReviewsApi, personName } from '@/lib/api/adminReviews';
@@ -313,6 +312,7 @@ export function ReviewDetailDrawer({ reviewId, onClose }: ReviewDetailDrawerProp
           </motion.div>
 
           <ModerateDialog
+            key={`${review?._id ?? 'none'}-${moderateAction ?? 'none'}`}
             review={review ?? null}
             defaultAction={moderateAction ?? 'approved'}
             open={moderateAction !== null}

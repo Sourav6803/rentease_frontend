@@ -20,6 +20,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import axios from 'axios'
+import { useBehaviorTracking } from '@/hooks/useBehaviorTracking'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -54,10 +55,12 @@ const trustPoints = [
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const { trackPageView } = useBehaviorTracking()
 
   useEffect(() => {
     fetchCategories()
-  }, [])
+    trackPageView('/categories')
+  }, [trackPageView])
 
   const fetchCategories = async () => {
     try {

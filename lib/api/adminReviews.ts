@@ -166,7 +166,7 @@ export const adminReviewsApi = {
   /** Fully populated single review, used by the detail drawer. */
   async getReview(id: string): Promise<Review> {
     const res = await adminReviewsClient.get<ApiEnvelope<{ review: Review }>>(
-      `/api/v1/reviews/${id}`
+      `/api/v1/reviews/admin/${id}`
     );
     if (!res.data.data) {
       throw new Error(res.data.message || 'Review not found');

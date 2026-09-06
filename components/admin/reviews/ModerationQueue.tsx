@@ -45,7 +45,7 @@ export function ModerationQueue({ tab, page, onPageChange, onOpenDetail }: Moder
     placeholderData: (prev) => prev,
   });
 
-  const reviews = data?.reviews ?? [];
+  const reviews = useMemo(() => data?.reviews ?? [], [data?.reviews]);
   const pagination = data?.pagination;
 
   const allSelectedOnPage = useMemo(
@@ -158,6 +158,7 @@ export function ModerationQueue({ tab, page, onPageChange, onOpenDetail }: Moder
       />
 
       <ModerateDialog
+        key={`${quickModerate?.review._id ?? 'none'}-${quickModerate?.action ?? 'none'}`}
         review={quickModerate?.review ?? null}
         defaultAction={quickModerate?.action ?? 'approved'}
         open={quickModerate !== null}

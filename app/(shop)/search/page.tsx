@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { useBehaviorTracking } from '@/hooks/useBehaviorTracking'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -241,6 +242,7 @@ function SearchInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const query = (searchParams.get('q') || '').trim()
+  const { trackEvent } = useBehaviorTracking()
 
   const [products, setProducts] = useState<Product[]>([])
   const [agg, setAgg] = useState<Aggregations | null>(null)
@@ -306,6 +308,12 @@ function SearchInner() {
         setProducts(data.products || [])
         setAgg(data.aggregations || null)
         setPagination(data.pagination || null)
+
+        if (query) {
+          trackEvent('search', {
+            metadata: { query, pageUrl: `/search?q=${encodeURIComponent(query)}` },
+          })
+        }
 
         // Initialise the slider bounds once from the unfiltered aggregation.
         const p = data.aggregations?.price

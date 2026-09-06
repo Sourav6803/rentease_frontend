@@ -9,6 +9,7 @@ import {
   ArrowRight, Download, Share2, Home, Clock,
   ShieldCheck, Star, ChevronRight, Sparkles,
 } from 'lucide-react'
+import { useBehaviorTracking } from '@/hooks/useBehaviorTracking'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -227,6 +228,7 @@ export default function CheckoutSuccessPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const { data: session, status } = useSession()
+  const { trackEvent } = useBehaviorTracking()
 
   const [order, setOrder] = useState<OrderDetails | null>(null)
   const [loading, setLoading] = useState(true)
@@ -277,6 +279,13 @@ export default function CheckoutSuccessPage() {
 
       if (res.data.success) {
         const rental = res.data.data.rental
+
+        trackEvent('checkout_completed', {
+          metadata: {
+            rentalId: rental._id,
+            cartValue: rental.rentalDetails?.totalAmount || rental.totalAmount || 0,
+          },
+        }).catch(() => {})
 
         // Derive a human-readable delivery slot
         const rawSlot = rental.deliverySlot || ''
