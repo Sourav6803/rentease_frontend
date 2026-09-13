@@ -40,6 +40,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { useQueryClient } from '@tanstack/react-query'
+import { vendorProfileQueryOptions } from '@/lib/api/vendorProfile'
+import { vendorQueryKeys } from '@/lib/api/queryKeys'
 import axios from 'axios'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
@@ -144,6 +147,7 @@ const PAYOUT_TIMELINE = [
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function BankDetailsPage() {
   const { data: session, status } = useSession()
+  const queryClient = useQueryClient()
   const [profile, setProfile] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -179,14 +183,12 @@ export default function BankDetailsPage() {
 
   // ── Fixed: single API call once session is ready ───────────────────────────
   const fetchProfile = useCallback(
-    async (token: string) => {
+    async () => {
       try {
         setIsLoading(true)
-        const response = await axios.get(`${BASE_URL}/api/v1/vendor/profile/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (response.data.success) {
-          const data = response.data.data.profile
+        // Served from the shared vendor-profile cache when fresh.
+        const data = await queryClient.fetchQuery(vendorProfileQueryOptions)
+        if (data) {
           setProfile(data)
           setValue('accountHolderName', data.bankDetails?.accountHolderName || '')
           setValue('ifscCode', data.bankDetails?.ifscCode || '')
@@ -202,7 +204,7 @@ export default function BankDetailsPage() {
         setIsLoading(false)
       }
     },
-    [setValue]
+    [setValue, queryClient]
   )
 
   useEffect(() => {
@@ -211,7 +213,7 @@ export default function BankDetailsPage() {
     if (!token) return
     if (hasFetched.current) return
     hasFetched.current = true
-    fetchProfile(token)
+    fetchProfile()
   }, [status, session?.user?.accessToken, fetchProfile])
 
   // ── IFSC verification with debounce ───────────────────────────────────────
@@ -260,8 +262,11 @@ export default function BankDetailsPage() {
       })
       if (response.data.success) {
         toast.success('Bank details saved securely')
+        // Drop the cached profile FIRST so the refresh below reads the saved
+        // values rather than the stale cached copy.
+        await queryClient.invalidateQueries({ queryKey: vendorQueryKeys.profile })
         hasFetched.current = false
-        fetchProfile(session!.user!.accessToken as string)
+        fetchProfile()
       }
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Failed to update bank details')

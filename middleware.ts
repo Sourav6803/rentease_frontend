@@ -6,11 +6,24 @@ import { NextResponse } from 'next/server'
 import type { NextRequestWithAuth } from 'next-auth/middleware'
 import type { JWT } from 'next-auth/jwt'
 
-const nextAuthSecret =
-  process.env.NEXTAUTH_SECRET ??
-  (process.env.NODE_ENV === 'development'
-    ? 'dev-nextauth-secret'
-    : undefined)
+// The Edge middleware MUST sign/verify sessions with exactly the same secret as
+// the NextAuth route handler (app/api/auth/[...nextauth]/route.ts uses
+// `secret: process.env.NEXTAUTH_SECRET`).
+//
+// This previously fell back to a hardcoded 'dev-nextauth-secret' in
+// development. Any mismatch between the two secrets makes every JWT decrypt
+// fail, which is indistinguishable from "the user is logged out" — the
+// middleware sees `token === null` and redirects to the login page while the
+// browser still holds a perfectly valid session cookie. Failing loudly here is
+// far better than debugging that silently.
+const nextAuthSecret = process.env.NEXTAUTH_SECRET
+
+if (!nextAuthSecret) {
+  throw new Error(
+    'NEXTAUTH_SECRET is not set — the auth middleware cannot verify sessions. ' +
+      'Add it to frontend/.env.local (it must match the value the NextAuth route handler uses).',
+  )
+}
 
 declare module 'next-auth/jwt' {
   interface JWT {
@@ -132,6 +145,13 @@ const findMatchingRoute = (
       : path.startsWith(config.path)
   )
 }
+
+// Roles that have a real dashboard page to land on. Regular users ('user') are
+// intentionally excluded: there is no /dashboard route, so they should simply
+// see the public home page.
+const ROOT_REDIRECT_ROLES: Array<
+  'user' | 'vendor' | 'admin' | 'super-admin' | 'delivery'
+> = ['vendor', 'admin', 'super-admin', 'delivery']
 
 const getDashboardUrl = (role: string): string => {
   const normalizedRole = normalizeRole(role)
@@ -273,37 +293,64 @@ export default withAuth(
     const token = req.nextauth.token as UserToken | null
     const path = req.nextUrl.pathname
 
-    console.log(
-      'Token in middleware:',
-      token?.role,
-      token?.email,
-      'Path:',
-      path
-    )
+    // Root redirect — MUST run before the public-path early return below.
+    // Previously this lived after it, and because '/' is in publicRoutes the
+    // early return always won, so the block was unreachable dead code: a
+    // signed-in user browsing to the home page got the public landing page
+    // while the header still showed them as logged in.
+    // Skipped when the refresh already failed, otherwise it would bounce the
+    // user into a dashboard whose API calls all 401.
+    if (
+      path === '/' &&
+      token &&
+      token.error !== 'RefreshAccessTokenError'
+    ) {
+      const rootRole = normalizeRole(token.role)
+
+      // Only roles that actually own a dashboard page. getDashboardUrl() falls
+      // back to '/dashboard' for regular users, but there is no
+      // app/(dashboard)/dashboard/page.tsx — redirecting them would 404. Shoppers
+      // should keep seeing the public home page anyway.
+      if (ROOT_REDIRECT_ROLES.includes(rootRole)) {
+        const rootDashboardUrl = getDashboardUrl(rootRole)
+
+        if (rootDashboardUrl) {
+          return NextResponse.redirect(new URL(rootDashboardUrl, req.url))
+        }
+      }
+    }
 
     // Public routes
     if (isPublicPath(path)) {
-      console.log(`✅ Public path: ${path}`)
       return NextResponse.next()
     }
 
     // No token
     if (!token) {
-      console.log(`❌ No token for protected route: ${path}`)
-
       const loginUrl = getLoginUrl(undefined, path)
 
       const url = new URL(loginUrl, req.url)
 
       url.searchParams.set('callbackUrl', path)
 
-      return NextResponse.redirect(url)
+      const response = NextResponse.redirect(url)
+
+      // Clear the (undecryptable / expired) session cookies here too, not just
+      // on the refresh-failure branch. Leaving them behind is what let a stale
+      // session keep the header looking signed in on public pages after the user
+      // had already been bounced to the login screen.
+      if (
+        req.cookies.has('next-auth.session-token') ||
+        req.cookies.has('__Secure-next-auth.session-token')
+      ) {
+        clearAuthCookies(response)
+      }
+
+      return response
     }
 
     // Token refresh failed
     if (token.error === 'RefreshAccessTokenError') {
-      console.log('❌ Refresh token expired')
-
       const loginUrl = getLoginUrl(token.role, path)
 
       const url = new URL(loginUrl, req.url)
@@ -318,20 +365,10 @@ export default withAuth(
       return response
     }
 
+    // Safe from here on: `!token` and the refresh-failure branch both returned
+    // above, so a token is guaranteed and `userRole` is non-nullable (the
+    // helpers below, e.g. getDashboardUrl, require a concrete role).
     const userRole = normalizeRole(token.role)
-
-    console.log('User role:', userRole)
-
-    // Redirect logged in users from root
-    if (path === '/') {
-      const dashboardUrl = getDashboardUrl(userRole)
-
-      console.log(`🔄 Redirecting to ${dashboardUrl}`)
-
-      return NextResponse.redirect(
-        new URL(dashboardUrl, req.url)
-      )
-    }
 
     // Prevent visiting wrong login pages
     if (

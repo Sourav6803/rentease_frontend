@@ -1,7 +1,8 @@
 // src/app/vendor/settings/components/SecurityTab.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -55,6 +56,59 @@ export function SecurityTab() {
     newPassword: '',
     confirmPassword: ''
   })
+
+  // Live security state — previously every value on this tab was hardcoded.
+  const [securityState, setSecurityState] = useState({
+    securityScore: 0,
+    twoFactorConfigured: false,
+    twoFactorEnabled: false,
+    activeSessions: 0,
+    activeApiKeys: 0,
+    loginAlertsEnabled: false,
+    deviceTrustEnabled: false,
+    lastPasswordChange: null as string | null,
+  })
+  const [isSecurityLoading, setIsSecurityLoading] = useState(true)
+
+  const fetchSecurityState = useCallback(async () => {
+    try {
+      setIsSecurityLoading(true)
+      const response = await axios.get(
+        `${BASE_URL}/api/v1/vendor/security/overview`,
+        {
+          headers: { Authorization: `Bearer ${session?.user?.accessToken}` }
+        }
+      )
+
+      if (response.data?.success) {
+        const overview = response.data.data.overview
+        setSecurityState({
+          securityScore: overview.securityScore ?? 0,
+          twoFactorConfigured: Boolean(overview.twoFactorConfigured),
+          twoFactorEnabled: Boolean(overview.twoFactorEnabled),
+          activeSessions: overview.activeSessions ?? 0,
+          activeApiKeys: overview.activeApiKeys ?? 0,
+          loginAlertsEnabled: Boolean(overview.loginAlertsEnabled),
+          deviceTrustEnabled: Boolean(overview.deviceTrustEnabled),
+          lastPasswordChange: overview.lastPasswordChange ?? null,
+        })
+      }
+    } catch (error) {
+      // These values are read-only decorations here; a failure should not
+      // block the (working) password + session actions below.
+      console.error('Error loading security state:', error)
+    } finally {
+      setIsSecurityLoading(false)
+    }
+  }, [session?.user?.accessToken])
+
+  useEffect(() => {
+    if (session?.user?.accessToken) {
+      fetchSecurityState()
+    } else {
+      setIsSecurityLoading(false)
+    }
+  }, [session?.user?.accessToken, fetchSecurityState])
 
   const validatePasswordForm = () => {
     let isValid = true
@@ -144,11 +198,55 @@ export function SecurityTab() {
     }
   }
 
+  /**
+   * Feature states are now derived from the real account state instead of
+   * being a fixed array.
+   */
   const securityFeatures = [
-    { icon: Lock, label: 'Two-Factor Authentication', description: 'Add an extra layer of security to your account', status: 'disabled', action: 'Enable' },
-    { icon: History, label: 'Login History', description: 'View your recent login activities', status: 'available', action: 'View' },
-    { icon: Smartphone, label: 'Trusted Devices', description: 'Manage devices that can access your account', status: 'active', action: 'Manage' },
-    { icon: Shield, label: 'Security Alerts', description: 'Get notified about suspicious activities', status: 'enabled', action: 'Configure' },
+    {
+      icon: Lock,
+      label: 'Two-Factor Authentication',
+      description: 'Add an extra layer of security to your account',
+      status: securityState.twoFactorConfigured
+        ? 'enabled'
+        : securityState.twoFactorEnabled
+          ? 'setup incomplete'
+          : 'disabled',
+      action: securityState.twoFactorConfigured ? 'Manage' : 'Enable',
+      href: '/vendor/security/2fa',
+    },
+    {
+      icon: History,
+      label: 'Login History',
+      description: 'View your recent login activities',
+      status: 'available',
+      action: 'View',
+      href: '/vendor/security/login-activity',
+    },
+    {
+      icon: Smartphone,
+      label: 'Trusted Devices',
+      description: 'Manage devices that can access your account',
+      status: `${securityState.activeSessions} session${securityState.activeSessions === 1 ? '' : 's'}`,
+      action: 'Manage',
+      href: '/vendor/security/login-activity',
+    },
+    {
+      icon: Shield,
+      label: 'Security Alerts',
+      description: 'Get notified about suspicious activities',
+      status: securityState.loginAlertsEnabled ? 'enabled' : 'disabled',
+      action: 'Configure',
+      href: '/vendor/security/logs',
+    },
+    {
+      icon: Key,
+      label: 'API Keys',
+      description: 'Manage programmatic access to your account',
+      status: `${securityState.activeApiKeys} active`,
+      action: 'Manage',
+      href: '/vendor/security/api',
+    },
   ]
 
   return (
@@ -169,10 +267,25 @@ export function SecurityTab() {
               <Shield className="h-6 w-6 text-green-600" />
             </div>
             <div className="flex-1">
-              <p className="font-semibold text-green-800">Your Security Score: Good</p>
-              <p className="text-sm text-green-700">Your account has basic security measures in place</p>
+              <p className="font-semibold text-green-800">
+                Your Security Score:{' '}
+                {isSecurityLoading
+                  ? 'Loading...'
+                  : securityState.securityScore >= 80
+                    ? 'Very Good'
+                    : securityState.securityScore >= 60
+                      ? 'Good'
+                      : 'Needs Attention'}
+              </p>
+              <p className="text-sm text-green-700">
+                {securityState.twoFactorConfigured
+                  ? 'Two-factor authentication is active on your account'
+                  : 'Enable two-factor authentication to improve your score'}
+              </p>
             </div>
-            <Badge className="bg-green-600">80%</Badge>
+            <Badge className="bg-green-600">
+              {isSecurityLoading ? '—' : `${securityState.securityScore}%`}
+            </Badge>
           </div>
         </CardContent>
       </Card>
@@ -311,7 +424,7 @@ export function SecurityTab() {
                   <Badge variant={feature.status === 'enabled' ? 'default' : 'secondary'} className="text-xs">
                     {feature.status}
                   </Badge>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" onClick={() => router.push(feature.href)}>
                     {feature.action}
                   </Button>
                 </div>
@@ -340,11 +453,22 @@ export function SecurityTab() {
                   <Monitor className="h-4 w-4 text-blue-600" />
                 </div>
                 <div>
-                  <p className="font-medium">Current Session</p>
-                  <p className="text-xs text-muted-foreground">Chrome on Windows • Active now</p>
+                  <p className="font-medium">Active Sessions</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isSecurityLoading
+                      ? 'Loading...'
+                      : `${securityState.activeSessions} device${securityState.activeSessions === 1 ? '' : 's'} currently signed in`}
+                  </p>
                 </div>
               </div>
-              <Badge variant="default">Current</Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="default">
+                  {isSecurityLoading ? '—' : securityState.activeSessions}
+                </Badge>
+                <Button variant="outline" size="sm" onClick={() => router.push('/vendor/security/login-activity')}>
+                  Manage
+                </Button>
+              </div>
             </div>
 
             <Button

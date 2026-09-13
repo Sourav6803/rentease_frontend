@@ -1,13 +1,25 @@
 // app/vendor/security/layout.tsx
 'use client'
 
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
+import { useSession } from 'next-auth/react'
 import {
   Shield, Lock, Key, Fingerprint, Bell, Eye,
   Smartphone, AlertTriangle, CheckCircle, ChevronRight
 } from 'lucide-react'
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
+
+async function getAuthHeaders() {
+  const { getSession } = await import('next-auth/react')
+  const session = await getSession()
+  return {
+    'Authorization': session?.user?.accessToken ? `Bearer ${session.user.accessToken}` : '',
+  }
+}
 
 const securityNav = [
   { name: 'Security Overview', href: '/vendor/security', icon: Shield },
@@ -19,6 +31,35 @@ const securityNav = [
 
 export default function SecurityLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const { status } = useSession()
+  const [securityScore, setSecurityScore] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (status !== 'authenticated') return
+
+    let cancelled = false
+
+    const loadScore = async () => {
+      try {
+        const headers = await getAuthHeaders()
+        const res = await fetch(`${BASE_URL}/api/v1/vendor/security/overview`, { headers })
+        const data = await res.json()
+
+        if (!cancelled && res.ok && data.success) {
+          setSecurityScore(data.data.overview?.securityScore ?? null)
+        }
+      } catch (error) {
+        // The score badge is cosmetic — a failure must not break the layout.
+        console.error('Failed to load security score:', error)
+      }
+    }
+
+    loadScore()
+
+    return () => {
+      cancelled = true
+    }
+  }, [status, pathname])
 
   return (
     <div className="min-h-screen bg-[#f1f3f6]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -40,9 +81,37 @@ export default function SecurityLayout({ children }: { children: React.ReactNode
                 Protect your account and business from unauthorized access
               </p>
             </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-lg">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <span className="text-xs font-medium text-green-700">Security Score: 92/100</span>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${
+              securityScore === null
+                ? 'bg-slate-100'
+                : securityScore >= 80
+                  ? 'bg-green-50'
+                  : securityScore >= 60
+                    ? 'bg-amber-50'
+                    : 'bg-red-50'
+            }`}>
+              <CheckCircle className={`h-4 w-4 ${
+                securityScore === null
+                  ? 'text-slate-400'
+                  : securityScore >= 80
+                    ? 'text-green-600'
+                    : securityScore >= 60
+                      ? 'text-amber-600'
+                      : 'text-red-600'
+              }`} />
+              <span className={`text-xs font-medium ${
+                securityScore === null
+                  ? 'text-slate-500'
+                  : securityScore >= 80
+                    ? 'text-green-700'
+                    : securityScore >= 60
+                      ? 'text-amber-700'
+                      : 'text-red-700'
+              }`}>
+                {securityScore === null
+                  ? 'Security Score: —'
+                  : `Security Score: ${securityScore}/100`}
+              </span>
             </div>
           </div>
         </div>

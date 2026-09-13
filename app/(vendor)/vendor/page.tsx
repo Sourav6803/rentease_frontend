@@ -11,9 +11,8 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { format } from 'date-fns'
-import axios from 'axios'
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
+import { useQueryClient } from '@tanstack/react-query'
+import { vendorProfileQueryOptions, type VendorProfile } from '@/lib/api/vendorProfile'
 
 // Status Screen Components
 function PendingVerificationScreen({ vendor, onRefresh }: { vendor: any; onRefresh: () => void }) {
@@ -289,9 +288,10 @@ function LimitedDashboard({ vendor }: { vendor: any }) {
 
 // Main Vendor Page with Status-based Rendering
 export default function VendorPage() {
-  const { data: session, status: sessionStatus } = useSession()
+  const { status: sessionStatus } = useSession()
   const router = useRouter()
-  const [vendor, setVendor] = useState(null)
+  const queryClient = useQueryClient()
+  const [vendor, setVendor] = useState<VendorProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -305,11 +305,11 @@ export default function VendorPage() {
 
   const fetchVendorStatus = async () => {
     try {
-      const response = await axios.get(`${BASE_URL}/api/v1/vendor/profile/me`, {
-        headers: { Authorization: `Bearer ${session?.user?.accessToken}` }
-      })
-      if (response.data.success) {
-        setVendor(response.data.data.profile)
+      // Reads through the shared cache, so the layout/sidebar/header request is
+      // reused instead of issuing a fourth copy of GET /vendor/profile/me.
+      const profile = await queryClient.fetchQuery(vendorProfileQueryOptions)
+      if (profile) {
+        setVendor(profile)
       }
     } catch (error) {
       console.error('Error fetching vendor:', error)
@@ -327,7 +327,7 @@ export default function VendorPage() {
   }
 
   // const status = vendor?.verification?.status
-  const status = (vendor as any)?.verification?.status;
+  const status = vendor?.verification?.status;
 
   // Render based on verification status
   switch (status) {

@@ -12,9 +12,7 @@ import { useSidebarStore } from "@/store/SidebarStore";
 import { Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import axios from "axios";
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
+import { useVendorProfile } from "@/hooks/useVendorProfile";
 
 // Allowed routes for pending vendors (exact matching)
 const ALLOWED_PENDING_PATTERNS = [
@@ -66,41 +64,41 @@ const isRestrictedRoute = (pathname: string): boolean => {
 };
 
 export default function VendorLayout({ children }: { children: React.ReactNode }) {
-  const { data: session, status: sessionStatus } = useSession();
+  const { status: sessionStatus } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const { isCollapsed } = useSidebarStore();
-  
+
+  const isPublicRoute = isPublicVendorRoute(pathname || "");
+
   const [vendorStatus, setVendorStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showPendingMessage, setShowPendingMessage] = useState(false);
   const [redirectedFrom, setRedirectedFrom] = useState<string | null>(null);
 
+  // Vendor status now comes from the shared React Query cache instead of this
+  // layout firing its own axios call. The old effect depended on the whole
+  // `session` object, whose identity changes on every session refresh (the
+  // AuthProvider re-fetches every 5 minutes and on window focus), so the profile
+  // was being re-requested for no reason. Sharing the key dedupes this call with
+  // the sidebar, the header and every vendor settings page.
+  const { profile: vendorProfile, isLoading: isProfileLoading } = useVendorProfile({
+    enabled: !isPublicRoute,
+  });
+
   // Fetch vendor status
   useEffect(() => {
-    const fetchVendorStatus = async () => {
-      if (sessionStatus !== "authenticated" || isPublicVendorRoute(pathname || "")) {
-        setIsLoading(false);
-        return;
-      }
+    if (sessionStatus !== "authenticated" || isPublicRoute) {
+      setIsLoading(false);
+      return;
+    }
 
-      try {
-        const response = await axios.get(`${BASE_URL}/api/v1/vendor/profile/me`, {
-          headers: { Authorization: `Bearer ${session?.user?.accessToken}` },
-        });
-        
-        if (response.data.success) {
-          setVendorStatus(response.data.data.profile?.verification?.status);
-        }
-      } catch (error) {
-        console.error("Error fetching vendor status:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    // Wait for the shared profile query to settle, then apply the status.
+    if (isProfileLoading) return;
 
-    fetchVendorStatus();
-  }, [sessionStatus, session, pathname]);
+    setVendorStatus(vendorProfile?.verification?.status ?? null);
+    setIsLoading(false);
+  }, [sessionStatus, isPublicRoute, isProfileLoading, vendorProfile]);
 
   // Handle routing based on verification status
   useEffect(() => {

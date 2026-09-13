@@ -1,7 +1,7 @@
 
 'use client'
 
-import { useState, useEffect, memo } from 'react'
+import { useState, useEffect, memo, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
@@ -11,12 +11,12 @@ import {
   Package, PackageOpen, Warehouse, Tags, PlusCircle,
   ShoppingBag, Truck, ClipboardList, Clock,
   Wallet, DollarSign, CreditCard, FileText, Receipt,
-  Users, Star, MessageSquare,
+  Users, Star,
   Settings, HelpCircle, Bell, Shield, LogOut,
-  PieChart, Activity,
-  ChevronDown, ChevronRight,
-  Menu, X, Store, Award,
-  CheckCircle, AlertCircle,
+  ChevronDown,
+  Menu, X, Store,
+  CheckCircle,
+  type LucideIcon,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -34,12 +34,90 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/useToast'
 import { useSidebarStore } from '@/store/SidebarStore'
+import { useVendorRealtimeStats } from '@/hooks/useVendorRealtimeStats'
 import { LogoutModal } from '../vendor/LogoutModal'
 import Image from 'next/image'
 
+function formatCurrency(value: number): string {
+  if (value >= 10000000) return `₹${(value / 10000000).toFixed(1)}Cr`
+  if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`
+  if (value >= 1000) return `₹${(value / 1000).toFixed(1)}K`
+  return `₹${value}`
+}
+
+function getQuickStatValue(
+  key: string,
+  vendorData: VendorSidebarProfile | null,
+  activeOrders: number,
+  pendingOrders: number,
+  isLoading: boolean
+): { value: string | number; change: string | null } {
+  if (isLoading) {
+    return { value: '—', change: null }
+  }
+  switch (key) {
+    case 'totalSales':
+      return { value: formatCurrency(vendorData?.stats?.totalRevenue || 0), change: null }
+    case 'activeOrders':
+      return { value: activeOrders, change: null }
+    case 'products':
+      return {
+        value: vendorData?.stats?.totalProducts ?? vendorData?.products?.total ?? 0,
+        change: null,
+      }
+    case 'rating': {
+      const avg = vendorData?.stats?.averageRating ?? 0
+      return { value: avg.toFixed(1), change: null }
+    }
+    default:
+      return { value: '—', change: null }
+  }
+}
+
+type NavigationItem = {
+  name: string
+  href?: string
+  icon: LucideIcon
+  description: string
+  badge?: string | null
+  badgeKey?: 'activeOrders' | 'pendingOrders'
+  exact?: boolean
+  highlight?: boolean
+  children?: NavigationItem[]
+}
+
+type VendorSidebarProfile = {
+  stats?: {
+    totalRevenue?: number
+    totalProducts?: number
+    averageRating?: number
+  }
+  products?: { total?: number }
+  business?: { logo?: { url?: string } }
+}
+function injectBadges(items: NavigationItem[], stats: { activeOrders: number; pendingOrders: number }) {
+  return items.map((item) => {
+    if (item.children) {
+      const children = item.children.map((child) => {
+        if (child.badgeKey) {
+          const value = child.badgeKey === 'activeOrders' ? stats.activeOrders : stats.pendingOrders
+          return { ...child, badge: value > 0 ? String(value) : null }
+        }
+        return child
+      })
+      return { ...item, children }
+    }
+    if (item.badgeKey) {
+      const value = item.badgeKey === 'activeOrders' ? stats.activeOrders : stats.pendingOrders
+      return { ...item, badge: value > 0 ? String(value) : null }
+    }
+    return item
+  })
+}
+
 // ─── Navigation config ────────────────────────────────────────────────────────
 
-const navigationItems = [
+const navigationItems: NavigationItem[] = [
   {
     name: 'Dashboard',
     href: '/vendor/dashboard',
@@ -76,8 +154,8 @@ const navigationItems = [
     description: 'Track all rentals',
     children: [
       { name: 'All Orders', href: '/vendor/orders', icon: ClipboardList, description: 'View all orders' },
-      { name: 'Active Rentals', href: '/vendor/orders/active', icon: Clock, badge: '12', description: 'Currently rented' },
-      { name: 'Pending', href: '/vendor/orders/pending', icon: Clock, badge: '3', description: 'Awaiting confirmation' },
+      { name: 'Active Rentals', href: '/vendor/orders/active', icon: Clock, badgeKey: 'activeOrders', description: 'Currently rented' },
+      { name: 'Pending', href: '/vendor/orders/pending', icon: Clock, badgeKey: 'pendingOrders', description: 'Awaiting confirmation' },
       { name: 'Completed', href: '/vendor/orders/completed', icon: CheckCircle, description: 'Finished rentals' },
     ],
   },
@@ -110,10 +188,10 @@ const navigationItems = [
 ]
 
 const quickStats = [
-  { label: 'Total Sales', value: '₹1,24,500', change: '+12.5%', trend: 'up', icon: DollarSign },
-  { label: 'Active Orders', value: '24', change: '+3', trend: 'up', icon: ShoppingBag },
-  { label: 'Products', value: '156', change: '+8', trend: 'up', icon: Package },
-  { label: 'Rating', value: '4.8', change: '+0.2', trend: 'up', icon: Star },
+  { label: 'Total Sales', key: 'totalSales', icon: DollarSign },
+  { label: 'Active Orders', key: 'activeOrders', icon: ShoppingBag },
+  { label: 'Products', key: 'products', icon: Package },
+  { label: 'Rating', key: 'rating', icon: Star },
 ]
 
 // ─── Collapsed icon button (with tooltip) ─────────────────────────────────────
@@ -122,7 +200,7 @@ const CollapsedNavIcon = ({
   item,
   isActive,
 }: {
-  item: (typeof navigationItems)[number]
+  item: NavigationItem
   isActive: boolean
 }) => {
   const Icon = item.icon
@@ -130,7 +208,7 @@ const CollapsedNavIcon = ({
     <Tooltip>
       <TooltipTrigger asChild>
         <Link
-          href={(item as any).href ?? '#'}
+          href={item.href ?? '#'}
           className={cn(
             'flex items-center justify-center w-10 h-10 rounded-lg mx-auto transition-all duration-150',
             isActive
@@ -161,12 +239,12 @@ const SidebarItem = memo(({
   isExpanded: boolean
   onToggle: () => void
 }) => {
-  const hasChildren = !!(item as any).children?.length
+  const hasChildren = Boolean(item.children?.length)
   const Icon = item.icon
   const pathname = usePathname()
 
   if (hasChildren) {
-    const children = (item as any).children as any[]
+    const children = item.children || []
     return (
       <Collapsible open={isExpanded} onOpenChange={onToggle}>
         <CollapsibleTrigger asChild>
@@ -193,7 +271,8 @@ const SidebarItem = memo(({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-0.5 ml-3 border-l border-blue-600/50 pl-3 space-y-0.5 py-1">
-            {children.map((child: any) => {
+            {children.map((child) => {
+              if (!child.href) return null
               const childActive = pathname === child.href
               const ChildIcon = child.icon
               return (
@@ -227,7 +306,7 @@ const SidebarItem = memo(({
 
   return (
     <Link
-      href={(item as any).href}
+      href={item.href || '#'}
       className={cn(
         'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
         isActive
@@ -237,9 +316,9 @@ const SidebarItem = memo(({
     >
       <Icon className="h-4.5 w-4.5 shrink-0" />
       <span className="flex-1 truncate">{item.name}</span>
-      {(item as any).badge && (
+      {item.badge && (
         <Badge className="bg-[#FB641B] hover:bg-[#FB641B] text-white text-[10px] px-1.5 py-0 h-4">
-          {(item as any).badge}
+          {item.badge}
         </Badge>
       )}
     </Link>
@@ -257,8 +336,8 @@ export function VendorSidebar() {
   const [expandedItems, setExpandedItems] = useState<string[]>([
     'Analytics', 'Products', 'Orders', 'Payments & Payouts', 'Settings',
   ])
-  const [vendorData, setVendorData] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const { profile: vendorData, isLoading, activeOrders, pendingOrders } =
+    useVendorRealtimeStats()
 
   const pathname = usePathname()
   const router = useRouter()
@@ -271,38 +350,19 @@ export function VendorSidebar() {
   // Close mobile drawer on route change
   useEffect(() => { setMobileOpen(false) }, [pathname, setMobileOpen])
 
-  // Fetch vendor profile
-  useEffect(() => {
-    const fetchVendorData = async () => {
-      try {
-        const res = await fetch('/api/v1/vendor/profile', {
-          headers: { Authorization: `Bearer ${(session as any)?.accessToken}` },
-        })
-        const data = await res.json()
-        if (data.success) setVendorData(data.data.vendor)
-      } catch {
-        // silent
-      } finally {
-        setIsLoading(false)
-      }
-    }
-    if ((session as any)?.accessToken) fetchVendorData()
-    else setIsLoading(false)
-  }, [session])
-
   const toggleExpanded = (name: string) =>
     setExpandedItems((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
     )
 
-  const isRouteActive = (item: (typeof navigationItems)[number]) => {
-    if ((item as any).href) {
-      return (item as any).exact
-        ? pathname === (item as any).href
-        : pathname.startsWith((item as any).href)
+  const isRouteActive = (item: NavigationItem) => {
+    if (item.href) {
+      return item.exact
+        ? pathname === item.href
+        : pathname.startsWith(item.href)
     }
-    if ((item as any).children) {
-      return (item as any).children.some((c: any) => pathname.startsWith(c.href))
+    if (item.children) {
+      return item.children.some((child) => child.href && pathname.startsWith(child.href))
     }
     return false
   }
@@ -341,6 +401,11 @@ export function VendorSidebar() {
       .join('')
       .toUpperCase()
   }
+
+  const resolvedNavItems = useMemo(
+    () => injectBadges(navigationItems, { activeOrders, pendingOrders }),
+    [activeOrders, pendingOrders]
+  )
 
   // ── Inner sidebar content (shared between desktop + mobile drawer) ──────────
   const SidebarContent = ({ collapsed = false }: { collapsed?: boolean }) => (
@@ -404,7 +469,7 @@ export function VendorSidebar() {
         <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
           <div className="relative shrink-0">
             <Avatar className="h-10 w-10 border-2 border-yellow-400/60">
-              <AvatarImage src={vendorData?.business?.logo || ''} />
+              <AvatarImage src={vendorData?.business?.logo?.url || ''} />
               <AvatarFallback className="bg-blue-700 text-yellow-300 font-bold text-sm">
                 {isLoading ? '…' : getInitials()}
               </AvatarFallback>
@@ -436,28 +501,36 @@ export function VendorSidebar() {
       </div>
 
       {/* ── Quick Stats (expanded only) ── */}
-      {!collapsed && (
+      {/* {!collapsed && (
         <div className="shrink-0 grid grid-cols-2 gap-1.5 p-3 border-b border-blue-700/60">
-          {quickStats.map((stat) => (
+          {quickStats.map((stat) => {
+            const { value, change } = getQuickStatValue(
+              stat.key,
+              vendorData,
+              activeOrders,
+              pendingOrders,
+              isLoading
+            )
+            return (
             <div
               key={stat.label}
               className="rounded-lg bg-blue-800/50 hover:bg-blue-700/60 transition-colors p-2"
             >
               <div className="flex items-center justify-between mb-0.5">
                 <stat.icon className="h-3 w-3 text-blue-300" />
-                <span className={cn(
-                  'text-[9px] font-bold',
-                  stat.trend === 'up' ? 'text-green-400' : 'text-red-400',
-                )}>
-                  {stat.change}
-                </span>
+                {change !== null && (
+                  <span className="text-[9px] font-bold text-green-400">
+                    {change}
+                  </span>
+                )}
               </div>
-              <p className="text-sm font-bold text-white leading-tight">{stat.value}</p>
+              <p className="text-sm font-bold text-white leading-tight">{value}</p>
               <p className="text-[10px] text-blue-300 mt-0.5 leading-none">{stat.label}</p>
             </div>
-          ))}
+          )
+          })}
         </div>
-      )}
+      )} */}
 
       {/* ── Navigation (scrollable) ── */}
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-2 px-2
@@ -465,7 +538,7 @@ export function VendorSidebar() {
         {collapsed ? (
           /* Collapsed: icon-only with tooltips */
           <nav className="space-y-1">
-            {navigationItems.map((item) => (
+            {resolvedNavItems.map((item) => (
               <CollapsedNavIcon
                 key={item.name}
                 item={item}
@@ -476,7 +549,7 @@ export function VendorSidebar() {
         ) : (
           /* Expanded: full labels + collapsible groups */
           <nav className="space-y-0.5">
-            {navigationItems.map((item) => (
+            {resolvedNavItems.map((item) => (
               <SidebarItem
                 key={item.name}
                 item={item}
@@ -498,14 +571,14 @@ export function VendorSidebar() {
               <span className="text-[11px] text-blue-300 font-medium">Plan</span>
               <Badge className="bg-yellow-400/20 text-yellow-300 border border-yellow-400/30
                                 text-[9px] px-1.5 py-0 h-4">
-                {vendorData.subscription.plan.toUpperCase()}
+                {(vendorData.subscription.plan || 'basic').toUpperCase()}
               </Badge>
             </div>
             <div className="w-full bg-blue-900 rounded-full h-1 mb-1">
               <div className="bg-yellow-400 h-1 rounded-full" style={{ width: '65%' }} />
             </div>
             <p className="text-[10px] text-blue-400">
-              {vendorData.subscription.limits.maxProducts - (vendorData.products?.total || 0)} products remaining
+              {(vendorData.subscription.limits?.maxProducts || 0) - (vendorData.products?.total || 0)} products remaining
             </p>
           </div>
         )}
@@ -524,7 +597,7 @@ export function VendorSidebar() {
         </button>
 
         {/* Support */}
-        {!collapsed && (
+        {/* {!collapsed && (
           <Link
             href="/vendor/support"
             className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs
@@ -533,7 +606,7 @@ export function VendorSidebar() {
             <HelpCircle className="h-4 w-4 shrink-0" />
             <span>Need help? Contact Support</span>
           </Link>
-        )}
+        )} */}
       </div>
     </div>
   )

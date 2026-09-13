@@ -1,126 +1,176 @@
-
-
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+/**
+ * app/(vendor)/vendor/settings/business-hours/page.tsx
+ *
+ * Weekly business hours editor.
+ *
+ * Data flow:
+ *   read  → shared React Query cache (GET /vendor/profile/me →
+ *           settings.businessHours) so this page reuses the layout/sidebar/header
+ *           request instead of issuing its own.
+ *   write → PUT /vendor/business-hours via `updateVendorBusinessHours`, then the
+ *           shared profile key is invalidated so every consumer repaints.
+ *
+ * Every value rendered here comes from that document and is normalised by
+ * `normalizeBusinessHours` first, so a shuffled, partial or legacy array can
+ * never crash the page or hide a day. The document is only loosely validated by
+ * the API, so the same module also owns the client-side time/break validation
+ * that gates the Save button.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Clock,
-  Sun,
-  Moon,
-  SunMoon,
-  Plus,
-  Trash2,
-  Save,
-  Loader2,
-  CheckCircle,
   AlertCircle,
-  Calendar,
-  X,
-  Coffee,
-  Zap,
-  TrendingUp,
-  Users,
-  Copy,
-  RotateCcw,
-  Info,
-  Sparkles,
-  BadgeCheck,
-  ChevronDown,
   Building2,
-  Star,
-  Timer,
+  Calendar,
+  CheckCircle,
+  ChevronDown,
+  Clock,
+  Coffee,
+  Copy,
   Globe,
+  Info,
+  Loader2,
+  Moon,
+  Plus,
+  RotateCcw,
+  Save,
+  Star,
+  Sun,
+  Timer,
+  Trash2,
+  TriangleAlert,
+  Undo2,
+  X,
 } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import axios from 'axios'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useQueryClient } from '@tanstack/react-query'
+import { vendorProfileQueryOptions } from '@/lib/api/vendorProfile'
+import { vendorQueryKeys } from '@/lib/api/queryKeys'
+import {
+  DAY_IDS,
+  TIME_SLOTS,
+  buildDefaultBusinessHours,
+  businessHoursEqual,
+  countInvalidDays,
+  formatDuration,
+  formatTime12,
+  getBusinessHoursErrorMessage,
+  getDayMeta,
+  getDayMinutes,
+  getLiveStatus,
+  getWindow,
+  hasStoredHours,
+  isOvernight,
+  normalizeBusinessHours,
+  toMinutes,
+  updateVendorBusinessHours,
+  validateBusinessHours,
+  type BusinessHour,
+  type WeekDay,
+} from '@/lib/api/vendorBusinessHours'
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
+const MINUTES_PER_DAY = 24 * 60
 
-// ── Constants ──────────────────────────────────────────────────────────────────
-const DAYS = [
-  { id: 'monday',    label: 'Monday',    short: 'Mon', weekend: false },
-  { id: 'tuesday',   label: 'Tuesday',   short: 'Tue', weekend: false },
-  { id: 'wednesday', label: 'Wednesday', short: 'Wed', weekend: false },
-  { id: 'thursday',  label: 'Thursday',  short: 'Thu', weekend: false },
-  { id: 'friday',    label: 'Friday',    short: 'Fri', weekend: false },
-  { id: 'saturday',  label: 'Saturday',  short: 'Sat', weekend: true  },
-  { id: 'sunday',    label: 'Sunday',    short: 'Sun', weekend: true  },
-]
-
-// 15-min slots from 00:00 → 23:45
-const TIME_SLOTS = Array.from({ length: 24 * 4 }, (_, i) => {
-  const h = Math.floor(i / 4).toString().padStart(2, '0')
-  const m = ((i % 4) * 15).toString().padStart(2, '0')
-  return `${h}:${m}`
+/**
+ * Nine evenly-spaced axis markers across the 24-hour strip: 12a, 3a, 6a, 9a,
+ * 12p, 3p, 6p, 9p, 12a. Derived rather than hard-coded so the labels cannot
+ * drift out of step with the 3-hour spacing.
+ */
+const TIMELINE_TICKS = Array.from({ length: 9 }, (_, index) => {
+  const hour = index * 3
+  const suffix = hour < 12 || hour === MINUTES_PER_DAY / 60 ? 'a' : 'p'
+  const display = hour % 12 === 0 ? 12 : hour % 12
+  return `${display}${suffix}`
 })
 
-const QUICK_PRESETS = [
-  { label: 'Standard (Mon–Fri)', icon: Building2, apply: (hours: BusinessHour[]) =>
-      hours.map(h => ({ ...h, isOpen: !DAYS.find(d => d.id === h.day)?.weekend, openTime: '09:00', closeTime: '18:00' }))
+// ── Presets ────────────────────────────────────────────────────────────────────
+
+interface Preset {
+  id: string
+  label: string
+  hint: string
+  icon: React.ElementType
+  /** Returns a brand-new complete week — never mutate existing state. */
+  build: () => BusinessHour[]
+}
+
+const PRESETS: Preset[] = [
+  {
+    id: 'standard',
+    label: 'Standard week',
+    hint: 'Mon–Fri · 9 AM – 6 PM',
+    icon: Building2,
+    build: () =>
+      buildDefaultBusinessHours().map((hour) => ({
+        ...hour,
+        isOpen: !getDayMeta(hour.day).isWeekend,
+        openTime: '09:00',
+        closeTime: '18:00',
+        breaks: [],
+      })),
   },
-  { label: 'Retail (Mon–Sat)', icon: Star, apply: (hours: BusinessHour[]) =>
-      hours.map(h => ({ ...h, isOpen: h.day !== 'sunday', openTime: '10:00', closeTime: '20:00' }))
+  {
+    id: 'retail',
+    label: 'Retail week',
+    hint: 'Mon–Sat · 10 AM – 8 PM',
+    icon: Star,
+    build: () =>
+      buildDefaultBusinessHours().map((hour) => ({
+        ...hour,
+        isOpen: hour.day !== 'sunday',
+        openTime: '10:00',
+        closeTime: '20:00',
+        breaks: [],
+      })),
   },
-  { label: 'Always Open (7 days)', icon: Globe, apply: (hours: BusinessHour[]) =>
-      hours.map(h => ({ ...h, isOpen: true, openTime: '08:00', closeTime: '22:00' }))
+  {
+    id: 'extended',
+    label: 'Extended hours',
+    hint: 'All 7 days · 8 AM – 10 PM',
+    icon: Globe,
+    build: () =>
+      buildDefaultBusinessHours().map((hour) => ({
+        ...hour,
+        isOpen: true,
+        openTime: '08:00',
+        closeTime: '22:00',
+        breaks: [],
+      })),
   },
-  { label: 'Half Day (9 AM–1 PM)', icon: Sun, apply: (hours: BusinessHour[]) =>
-      hours.map(h => ({ ...h, isOpen: !DAYS.find(d => d.id === h.day)?.weekend, openTime: '09:00', closeTime: '13:00' }))
+  {
+    id: 'half-day',
+    label: 'Half day',
+    hint: 'Mon–Fri · 9 AM – 1 PM',
+    icon: Sun,
+    build: () =>
+      buildDefaultBusinessHours().map((hour) => ({
+        ...hour,
+        isOpen: !getDayMeta(hour.day).isWeekend,
+        openTime: '09:00',
+        closeTime: '13:00',
+        breaks: [],
+      })),
   },
 ]
 
-const DEFAULT_HOURS = DAYS.map(d => ({
-  day: d.id,
-  isOpen: d.id !== 'sunday',
-  openTime: '09:00',
-  closeTime: '18:00',
-  breaks: [] as { start: string; end: string }[],
-}))
-
-// ── Types ──────────────────────────────────────────────────────────────────────
-interface BusinessHour {
-  day: string
-  isOpen: boolean
-  openTime: string
-  closeTime: string
-  breaks: { start: string; end: string }[]
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-function timeToMinutes(t: string) {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + m
-}
-function minutesToHours(m: number) {
-  return (m / 60).toFixed(1).replace('.0', '')
-}
-function fmt12(t: string) {
-  const [h, m] = t.split(':').map(Number)
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 || 12
-  return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`
-}
-function getDayHours(hour: BusinessHour) {
-  if (!hour.isOpen) return 0
-  const total = timeToMinutes(hour.closeTime) - timeToMinutes(hour.openTime)
-  const breakMins = hour.breaks.reduce((a, b) => a + timeToMinutes(b.end) - timeToMinutes(b.start), 0)
-  return Math.max(0, total - breakMins)
-}
+// ── Small building blocks ──────────────────────────────────────────────────────
 
 function SectionCard({
   icon: Icon,
@@ -128,496 +178,1052 @@ function SectionCard({
   description,
   headerExtra,
   children,
-  className = '',
 }: {
   icon: React.ElementType
   title: string
   description?: string
   headerExtra?: React.ReactNode
   children: React.ReactNode
-  className?: string
 }) {
   return (
-    <Card className={`border border-slate-100 rounded-2xl shadow-sm overflow-hidden ${className}`}>
-      <CardHeader className="pb-3 bg-slate-50/70 border-b border-slate-100">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="bg-[#2874f0]/10 rounded-lg p-1.5">
-              <Icon className="h-4 w-4 text-[#2874f0]" />
-            </div>
-            <div>
-              <CardTitle className="text-base font-semibold text-slate-700">{title}</CardTitle>
-              {description && <CardDescription className="text-xs mt-0.5">{description}</CardDescription>}
-            </div>
+    <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-3.5">
+        <div className="flex items-center gap-2.5">
+          <span className="rounded-lg bg-[#2874f0]/10 p-1.5">
+            <Icon className="h-4 w-4 text-[#2874f0]" aria-hidden />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-slate-700">{title}</h2>
+            {description ? (
+              <p className="mt-0.5 text-xs text-slate-500">{description}</p>
+            ) : null}
           </div>
-          {headerExtra}
         </div>
-      </CardHeader>
-      <CardContent className="pt-5">{children}</CardContent>
-    </Card>
+        {headerExtra}
+      </header>
+      <div className="px-5 py-5">{children}</div>
+    </section>
   )
 }
 
-// Inline time select – lighter than full Select for compact layout
-function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function TimeSelect({
+  value,
+  onChange,
+  label,
+  invalid = false,
+}: {
+  value: string
+  onChange: (next: string) => void
+  label: string
+  invalid?: boolean
+}) {
+  const morning = TIME_SLOTS.filter((slot) => toMinutes(slot) < 12 * 60)
+  const afternoon = TIME_SLOTS.filter((slot) => toMinutes(slot) >= 12 * 60)
+
   return (
     <select
+      aria-label={label}
+      aria-invalid={invalid || undefined}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="px-2 py-1.5 text-sm font-mono border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2874f0]/30 focus:border-[#2874f0] bg-white text-slate-700 cursor-pointer"
+      onChange={(event) => onChange(event.target.value)}
+      className={`cursor-pointer rounded-lg border bg-white px-2 py-1.5 font-mono text-sm text-slate-700 outline-none transition focus:ring-2 focus:ring-[#2874f0]/30 ${
+        invalid
+          ? 'border-red-300 focus:border-red-400'
+          : 'border-slate-200 focus:border-[#2874f0]'
+      }`}
     >
-      {TIME_SLOTS.map((t) => (
-        <option key={t} value={t}>{fmt12(t)}</option>
-      ))}
+      <optgroup label="AM">
+        {morning.map((slot) => (
+          <option key={slot} value={slot}>
+            {formatTime12(slot)}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="PM">
+        {afternoon.map((slot) => (
+          <option key={slot} value={slot}>
+            {formatTime12(slot)}
+          </option>
+        ))}
+      </optgroup>
     </select>
   )
 }
 
-// Visual bar showing open window in a 24h strip
+/**
+ * Split an absolute [from, to) minute range into segments that each stay within
+ * a single calendar day, so an overnight window (or a break that crosses
+ * midnight) still renders inside the 24-hour strip.
+ *
+ * Every returned `from` is a 0..1439 clock minute, and segments are guaranteed
+ * non-empty so callers cannot render a zero-width bar or loop forever.
+ */
+function daySegments(from: number, to: number): Array<{ from: number; to: number }> {
+  const segments: Array<{ from: number; to: number }> = []
+  let cursor = Math.max(0, from)
+
+  while (cursor < to) {
+    const dayIndex = Math.floor(cursor / MINUTES_PER_DAY)
+    const sliceEnd = Math.min(to, (dayIndex + 1) * MINUTES_PER_DAY)
+    const length = sliceEnd - cursor
+    if (length <= 0) break
+
+    const start = cursor - dayIndex * MINUTES_PER_DAY
+    segments.push({ from: start, to: start + length })
+    cursor = sliceEnd
+  }
+
+  return segments
+}
+
+function pct(minutes: number) {
+  return (minutes / MINUTES_PER_DAY) * 100
+}
+
 function DayTimeline({ hour }: { hour: BusinessHour }) {
   if (!hour.isOpen) {
     return (
-      <div className="h-2 bg-slate-100 rounded-full w-full flex items-center justify-center">
-        <span className="text-[9px] text-slate-400 font-semibold tracking-wider">CLOSED</span>
+      <div className="flex h-2 w-full items-center justify-center rounded-full bg-slate-100">
+        <span className="text-[9px] font-semibold tracking-wider text-slate-400">CLOSED</span>
       </div>
     )
   }
-  const openPct = (timeToMinutes(hour.openTime) / (24 * 60)) * 100
-  const closePct = (timeToMinutes(hour.closeTime) / (24 * 60)) * 100
-  const width = closePct - openPct
+
+  // Same window maths as `getWindow`: a close time that is not after the open
+  // time means the day runs past midnight.
+  const openMinutes = toMinutes(hour.openTime)
+  const rawClose = toMinutes(hour.closeTime)
+  const closeMinutes = rawClose <= openMinutes ? rawClose + MINUTES_PER_DAY : rawClose
+
+  const bars: Array<{ from: number; to: number; tone: 'open' | 'break' }> = []
+  for (const segment of daySegments(openMinutes, closeMinutes)) {
+    bars.push({ ...segment, tone: 'open' })
+  }
+
+  // Breaks are drawn last so they sit on top of the open bar. Anything outside
+  // the window (invalid input) is clamped away rather than rendered wrongly.
+  hour.breaks.forEach((brk) => {
+    const start = toMinutes(brk.start)
+    const rawEnd = toMinutes(brk.end)
+    const absoluteStart = start < openMinutes ? start + MINUTES_PER_DAY : start
+    const absoluteEnd = rawEnd <= start ? rawEnd + MINUTES_PER_DAY : rawEnd
+
+    const clampedStart = Math.max(absoluteStart, openMinutes)
+    const clampedEnd = Math.min(absoluteEnd, closeMinutes)
+    if (clampedEnd <= clampedStart) return
+
+    for (const segment of daySegments(clampedStart, clampedEnd)) {
+      bars.push({ ...segment, tone: 'break' })
+    }
+  })
+
   return (
-    <div className="relative h-2 bg-slate-100 rounded-full w-full overflow-hidden">
-      <div
-        className="absolute h-full bg-gradient-to-r from-[#2874f0] to-[#5b9bf8] rounded-full"
-        style={{ left: `${openPct}%`, width: `${width}%` }}
-      />
-      {hour.breaks.map((b, i) => {
-        const bLeft = (timeToMinutes(b.start) / (24 * 60)) * 100
-        const bW = ((timeToMinutes(b.end) - timeToMinutes(b.start)) / (24 * 60)) * 100
-        return (
-          <div key={i}
-            className="absolute h-full bg-amber-300 rounded-full"
-            style={{ left: `${bLeft}%`, width: `${bW}%` }}
-          />
-        )
-      })}
+    <div className="relative h-2 w-full overflow-hidden rounded-full bg-slate-100">
+      {bars.map((bar, index) => (
+        <div
+          key={`${bar.tone}-${index}`}
+          className={`absolute h-full ${
+            bar.tone === 'break' ? 'bg-amber-300' : 'bg-gradient-to-r from-[#2874f0] to-[#5b9bf8]'
+          }`}
+          style={{ left: `${pct(bar.from)}%`, width: `${pct(bar.to - bar.from)}%` }}
+        />
+      ))}
     </div>
   )
 }
 
-// ── Main Page ──────────────────────────────────────────────────────────────────
+// ── Page ───────────────────────────────────────────────────────────────────────
+
 export default function BusinessHoursPage() {
-  const { data: session, status } = useSession()
-  const [businessHours, setBusinessHours] = useState<BusinessHour[]>(DEFAULT_HOURS)
+  const { status } = useSession()
+  const queryClient = useQueryClient()
+
+  const [draft, setDraft] = useState<BusinessHour[]>(buildDefaultBusinessHours)
+  const [saved, setSaved] = useState<BusinessHour[]>(buildDefaultBusinessHours)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [hasChanges, setHasChanges] = useState(false)
-  const [expandedDay, setExpandedDay] = useState<string | null>(null)
-  const hasFetched = useRef(false)
+  const [loadError, setLoadError] = useState(false)
+  const [neverConfigured, setNeverConfigured] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  const [expandedDay, setExpandedDay] = useState<WeekDay | null>(null)
+  const [now, setNow] = useState<Date | null>(null)
 
-  // ── Fixed: single fetch once session is ready ─────────────────────────────
-  const fetchBusinessHours = useCallback(async (token: string) => {
+  // Confirmation dialog. The request is kept separately from the open flag so
+  // the copy does not blank out while the dialog animates closed.
+  const [confirmRequest, setConfirmRequest] = useState<{
+    title: string
+    description: string
+    confirmLabel: string
+    onConfirm: () => void
+  } | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  const requestConfirm = useCallback(
+    (request: NonNullable<typeof confirmRequest>) => {
+      setConfirmRequest(request)
+      setConfirmOpen(true)
+    },
+    []
+  )
+
+  // ── Load ────────────────────────────────────────────────────────────────────
+
+  const load = useCallback(async () => {
     try {
       setIsLoading(true)
-      const res = await axios.get(`${BASE_URL}/api/v1/vendor/profile/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.data.success) {
-        const profile = res.data.data.profile
-        setBusinessHours(profile?.settings?.businessHours || DEFAULT_HOURS)
-      }
-    } catch (err) {
-      console.error('Error fetching business hours:', err)
+      setLoadError(false)
+      // Served from the shared vendor-profile cache when fresh — no extra request.
+      const profile = await queryClient.fetchQuery(vendorProfileQueryOptions)
+      const raw = profile?.settings?.businessHours
+      const normalized = normalizeBusinessHours(raw)
+
+      setDraft(normalized)
+      setSaved(normalized)
+      setNeverConfigured(!hasStoredHours(raw))
+    } catch (error) {
+      console.error('[business-hours] load failed:', error)
       toast.error('Failed to load business hours')
+      // Deliberately do NOT fall back to a default schedule: saving that over
+      // real hours would silently destroy the vendor's configuration.
+      setLoadError(true)
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [queryClient])
+
+  const loadedRef = useRef(false)
 
   useEffect(() => {
-    if (status !== 'authenticated') return
-    const token = session?.user?.accessToken
-    if (!token || hasFetched.current) return
-    hasFetched.current = true
-    fetchBusinessHours(token)
-  }, [status, session?.user?.accessToken, fetchBusinessHours])
+    // Load once per mount, so a session refresh can never clobber unsaved edits.
+    if (status !== 'authenticated' || loadedRef.current) return
+    loadedRef.current = true
+    void load()
+  }, [status, load])
 
-  // ── Mutations ──────────────────────────────────────────────────────────────
-  const update = (dayId: string, patch: Partial<BusinessHour>) => {
-    setBusinessHours(prev => prev.map(h => h.day === dayId ? { ...h, ...patch } : h))
-    setHasChanges(true)
-  }
-  const addBreak = (dayId: string) => {
-    setBusinessHours(prev => prev.map(h =>
-      h.day === dayId ? { ...h, breaks: [...h.breaks, { start: '13:00', end: '14:00' }] } : h
-    ))
-    setHasChanges(true)
-  }
-  const removeBreak = (dayId: string, idx: number) => {
-    setBusinessHours(prev => prev.map(h =>
-      h.day === dayId ? { ...h, breaks: h.breaks.filter((_, i) => i !== idx) } : h
-    ))
-    setHasChanges(true)
-  }
-  const updateBreak = (dayId: string, idx: number, patch: Partial<{ start: string; end: string }>) => {
-    setBusinessHours(prev => prev.map(h =>
-      h.day === dayId
-        ? { ...h, breaks: h.breaks.map((b, i) => i === idx ? { ...b, ...patch } : b) }
-        : h
-    ))
-    setHasChanges(true)
-  }
-  const applyPreset = (preset: typeof QUICK_PRESETS[0]) => {
-    setBusinessHours(h => preset.apply(h))
-    setHasChanges(true)
+  // Live clock for the "what customers see now" badge. Starts null so the
+  // server render and the first client render agree.
+  useEffect(() => {
+    setNow(new Date())
+    const timer = window.setInterval(() => setNow(new Date()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  // ── Derived state ───────────────────────────────────────────────────────────
+
+  const validation = useMemo(() => validateBusinessHours(draft), [draft])
+  const invalidDays = useMemo(() => countInvalidDays(validation), [validation])
+  const firstInvalidDay = useMemo(
+    () => DAY_IDS.find((id) => validation[id]?.hasError) ?? null,
+    [validation]
+  )
+
+  const isDirty = useMemo(() => !businessHoursEqual(draft, saved), [draft, saved])
+
+  const openDays = useMemo(() => draft.filter((hour) => hour.isOpen).length, [draft])
+  const allClosed = openDays === 0
+  const weeklyMinutes = useMemo(
+    () => draft.reduce((total, hour) => total + getDayMinutes(hour), 0),
+    [draft]
+  )
+  const averageMinutes = openDays > 0 ? Math.round(weeklyMinutes / openDays) : 0
+  const breakCount = useMemo(
+    () => draft.reduce((total, hour) => total + hour.breaks.length, 0),
+    [draft]
+  )
+
+  const liveStatus = useMemo(() => (now ? getLiveStatus(saved, now) : null), [saved, now])
+
+  useEffect(() => {
+    if (!isDirty) return
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
+  // ── Edits ───────────────────────────────────────────────────────────────────
+
+  const patchDay = useCallback((day: WeekDay, patch: Partial<BusinessHour>) => {
+    setDraft((previous) =>
+      previous.map((hour) => (hour.day === day ? { ...hour, ...patch } : hour))
+    )
+  }, [])
+
+  const addBreak = useCallback((day: WeekDay) => {
+    setDraft((previous) =>
+      previous.map((hour) => {
+        if (hour.day !== day) return hour
+        const window = getWindow(hour)
+        // Seed the break inside the open window so it starts valid.
+        const startOffset = Math.min(12 * 60, Math.max(0, Math.round(window.length / 2) - 30))
+        const startMinutes = (window.start + startOffset) % MINUTES_PER_DAY
+        const endMinutes = (startMinutes + 30) % MINUTES_PER_DAY
+        const toClock = (value: number) =>
+          `${Math.floor(value / 60).toString().padStart(2, '0')}:${(value % 60)
+            .toString()
+            .padStart(2, '0')}`
+        return {
+          ...hour,
+          breaks: [...hour.breaks, { start: toClock(startMinutes), end: toClock(endMinutes) }],
+        }
+      })
+    )
+  }, [])
+
+  const patchBreak = useCallback(
+    (day: WeekDay, index: number, patch: Partial<{ start: string; end: string }>) => {
+      setDraft((previous) =>
+        previous.map((hour) =>
+          hour.day === day
+            ? {
+                ...hour,
+                breaks: hour.breaks.map((brk, i) => (i === index ? { ...brk, ...patch } : brk)),
+              }
+            : hour
+        )
+      )
+    },
+    []
+  )
+
+  const removeBreak = useCallback((day: WeekDay, index: number) => {
+    setDraft((previous) =>
+      previous.map((hour) =>
+        hour.day === day
+          ? { ...hour, breaks: hour.breaks.filter((_, i) => i !== index) }
+          : hour
+      )
+    )
+  }, [])
+
+  const revertDay = useCallback(
+    (day: WeekDay) => {
+      const original = saved.find((hour) => hour.day === day)
+      if (!original) return
+      setDraft((previous) =>
+        previous.map((hour) =>
+          hour.day === day ? { ...original, breaks: original.breaks.map((b) => ({ ...b })) } : hour
+        )
+      )
+      toast(`Reverted ${getDayMeta(day).label} to the saved hours`)
+    },
+    [saved]
+  )
+
+  const applyPreset = useCallback((preset: Preset) => {
+    setDraft(preset.build())
+    setExpandedDay(null)
     toast.success(`Applied preset: ${preset.label}`)
-  }
-  const copyToAll = (sourceDay: string) => {
-    const src = businessHours.find(h => h.day === sourceDay)
-    if (!src) return
-    setBusinessHours(prev => prev.map(h => ({
-      ...h, isOpen: src.isOpen, openTime: src.openTime, closeTime: src.closeTime, breaks: [...src.breaks]
-    })))
-    setHasChanges(true)
-    toast.success(`Copied ${sourceDay}'s hours to all days`)
-  }
-  const resetToDefault = () => {
-    setBusinessHours(DEFAULT_HOURS)
-    setHasChanges(true)
-    toast('Reset to default hours')
-  }
+  }, [])
 
-  const handleSave = async () => {
+  const copyDayToAll = useCallback(
+    (day: WeekDay) => {
+      const source = draft.find((hour) => hour.day === day)
+      if (!source) return
+      setDraft((previous) =>
+        previous.map((hour) => ({
+          ...hour,
+          isOpen: source.isOpen,
+          openTime: source.openTime,
+          closeTime: source.closeTime,
+          breaks: source.breaks.map((brk) => ({ ...brk })),
+        }))
+      )
+      toast.success(`${getDayMeta(day).label}'s hours copied to all 7 days`)
+    },
+    [draft]
+  )
+
+  const revertAll = useCallback(() => {
+    setDraft(saved.map((hour) => ({ ...hour, breaks: hour.breaks.map((b) => ({ ...b })) })))
+    setExpandedDay(null)
+    toast('Reverted to the last saved hours')
+  }, [saved])
+
+  // ── Save ────────────────────────────────────────────────────────────────────
+
+  const handleSave = useCallback(async () => {
+    if (invalidDays > 0) {
+      setExpandedDay(firstInvalidDay)
+      toast.error(
+        `Fix ${invalidDays} day${invalidDays === 1 ? '' : 's'} before saving your hours`
+      )
+      return
+    }
+
     setIsSaving(true)
     try {
-      const res = await axios.put(
-        `${BASE_URL}/api/v1/vendor/business-hours`,
-        { businessHours },
-        { headers: { Authorization: `Bearer ${session?.user?.accessToken}` } }
-      )
-      if (res.data.success) {
-        toast.success('Business hours saved successfully')
-        setHasChanges(false)
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to save business hours')
+      const result = await updateVendorBusinessHours(draft)
+      // Adopt the server's canonical copy — it is the source of truth.
+      setDraft(result)
+      setSaved(result)
+      setNeverConfigured(false)
+      setLastSavedAt(new Date())
+
+      toast.success('Business hours saved successfully')
+      // Keep the shared cache in sync — the sidebar/header read from it.
+      await queryClient.invalidateQueries({ queryKey: vendorQueryKeys.profile })
+    } catch (error) {
+      console.error('[business-hours] save failed:', error)
+      toast.error(getBusinessHoursErrorMessage(error))
     } finally {
       setIsSaving(false)
     }
-  }
+  }, [draft, firstInvalidDay, invalidDays, queryClient])
 
-  // ── Derived stats ──────────────────────────────────────────────────────────
-  const openDays = businessHours.filter(h => h.isOpen).length
-  const totalHoursPerWeek = businessHours.reduce((acc, h) => acc + getDayHours(h), 0)
-  const avgDailyHours = openDays > 0 ? (totalHoursPerWeek / openDays).toFixed(1) : '0'
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   if (isLoading || status === 'loading') {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4">
+      <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4">
         <div className="relative">
-          <div className="w-14 h-14 rounded-full border-4 border-[#2874f0]/20 border-t-[#2874f0] animate-spin" />
-          <Clock className="absolute inset-0 m-auto h-5 w-5 text-[#2874f0]" />
+          <div className="h-14 w-14 animate-spin rounded-full border-4 border-[#2874f0]/20 border-t-[#2874f0]" />
+          <Clock className="absolute inset-0 m-auto h-5 w-5 text-[#2874f0]" aria-hidden />
         </div>
-        <p className="text-sm text-slate-400 font-medium">Loading business hours…</p>
+        <p className="text-sm font-medium text-slate-400">Loading business hours…</p>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="mx-auto flex min-h-[70vh] max-w-md flex-col items-center justify-center gap-4 text-center">
+        <span className="rounded-2xl bg-red-50 p-4">
+          <AlertCircle className="h-7 w-7 text-red-500" aria-hidden />
+        </span>
+        <div>
+          <p className="font-semibold text-slate-800">Couldn&apos;t load your business hours</p>
+          <p className="mt-1 text-sm leading-relaxed text-slate-500">
+            A default schedule is deliberately not shown here — saving one would overwrite the
+            hours you actually have. Check your connection and try again.
+          </p>
+        </div>
+        <Button
+          onClick={() => {
+            setLoadError(false)
+            void load()
+          }}
+          className="gap-2 rounded-xl bg-[#2874f0] font-semibold text-white hover:bg-[#1a55c4]"
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden />
+          Try again
+        </Button>
       </div>
     )
   }
 
   return (
-    <div className="max-w-7xl mx-auto pb-16 space-y-6">
-
-      {/* ── Hero Banner ─────────────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1a2e6c] via-[#2874f0] to-[#0f52c4] text-white p-6 shadow-xl shadow-[#2874f0]/25">
-        <div className="absolute -top-8 -right-8 w-48 h-48 rounded-full bg-white/5 pointer-events-none" />
-        <div className="absolute -bottom-10 -left-8 w-36 h-36 rounded-full bg-white/5 pointer-events-none" />
+    <div className="mx-auto max-w-7xl space-y-6 pb-16">
+      {/* ── Hero ─────────────────────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1a2e6c] via-[#2874f0] to-[#0f52c4] p-6 text-white shadow-xl shadow-[#2874f0]/25">
+        <div className="pointer-events-none absolute -top-8 -right-8 h-48 w-48 rounded-full bg-white/5" />
+        <div className="pointer-events-none absolute -bottom-10 -left-8 h-36 w-36 rounded-full bg-white/5" />
 
         <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center backdrop-blur-sm">
-              <Clock className="h-7 w-7 text-white" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/25 bg-white/15 backdrop-blur-sm">
+              <Clock className="h-7 w-7 text-white" aria-hidden />
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">Business Hours</h1>
-              <p className="text-blue-200 text-sm mt-0.5">
-                Control your operational schedule · Visible to all customers
+              <p className="mt-0.5 text-sm text-blue-200">
+                Set your weekly operating schedule · Shown to customers
               </p>
-              <div className="flex flex-wrap gap-2 mt-3">
-                <span className="flex items-center gap-1.5 bg-white/10 border border-white/20 text-xs font-semibold px-3 py-1 rounded-full text-blue-100">
-                  <CheckCircle className="h-3 w-3 text-green-300" />
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {liveStatus ? (
+                  <span className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-100">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        liveStatus.isOpen
+                          ? 'bg-green-300'
+                          : liveStatus.onBreak
+                            ? 'bg-amber-300'
+                            : 'bg-slate-300'
+                      }`}
+                    />
+                    {liveStatus.detail}
+                  </span>
+                ) : null}
+                <span className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-100">
+                  <CheckCircle className="h-3 w-3 text-green-300" aria-hidden />
                   {openDays} / 7 days open
                 </span>
-                <span className="flex items-center gap-1.5 bg-white/10 border border-white/20 text-xs font-semibold px-3 py-1 rounded-full text-blue-100">
-                  <Timer className="h-3 w-3" />
-                  {minutesToHours(totalHoursPerWeek)}h / week
+                <span className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-blue-100">
+                  <Timer className="h-3 w-3" aria-hidden />
+                  {formatDuration(weeklyMinutes)} / week
                 </span>
               </div>
             </div>
           </div>
-          <AnimatePresence>
-            {hasChanges && (
-              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}>
-                <Button
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  size="sm"
-                  className="bg-white text-[#2874f0] hover:bg-blue-50 font-semibold gap-2 shadow-none"
+
+          <div className="flex flex-col items-end gap-2">
+            <AnimatePresence>
+              {isDirty ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
                 >
-                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Save Hours
-                </Button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    size="sm"
+                    className="gap-2 bg-white font-semibold text-[#2874f0] shadow-none hover:bg-blue-50"
+                  >
+                    {isSaving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Save className="h-4 w-4" aria-hidden />
+                    )}
+                    Save hours
+                  </Button>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+            {lastSavedAt ? (
+              <span className="text-[11px] text-blue-200">
+                Saved at{' '}
+                {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      {/* ── Stats Row ───────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* ── Blocking validation summary ──────────────────────────────────────── */}
+      {invalidDays > 0 ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4"
+        >
+          <span className="rounded-lg bg-red-100 p-2">
+            <AlertCircle className="h-5 w-5 text-red-600" aria-hidden />
+          </span>
+          <div className="flex-1">
+            <p className="font-semibold text-red-800">
+              {invalidDays} day{invalidDays === 1 ? '' : 's'} need attention
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-red-700">
+              Opening and closing times, and break periods, must be consistent before your hours
+              can be saved.
+            </p>
+            {firstInvalidDay ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setExpandedDay(firstInvalidDay)}
+                className="mt-3 rounded-lg border-red-300 text-xs font-semibold text-red-800 hover:bg-red-100"
+              >
+                Show {getDayMeta(firstInvalidDay).label}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── First-time / all-closed notices ──────────────────────────────────── */}
+      {neverConfigured ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+          <span className="rounded-lg bg-blue-100 p-2">
+            <Info className="h-5 w-5 text-blue-600" aria-hidden />
+          </span>
+          <div>
+            <p className="font-semibold text-blue-900">Suggested schedule</p>
+            <p className="mt-1 text-sm leading-relaxed text-blue-700">
+              You haven&apos;t saved business hours yet, so a common default is shown (Mon–Sat
+              9&nbsp;AM–6&nbsp;PM, Sunday closed). Adjust it and save to publish your real hours.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {allClosed && !neverConfigured ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <span className="rounded-lg bg-amber-100 p-2">
+            <TriangleAlert className="h-5 w-5 text-amber-600" aria-hidden />
+          </span>
+          <div>
+            <p className="font-semibold text-amber-900">All 7 days are closed</p>
+            <p className="mt-1 text-sm leading-relaxed text-amber-700">
+              Customers will see your store as closed and no rental requests can be accepted while
+              every day is switched off.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── Stats ────────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
-          { icon: CheckCircle, label: 'Open Days',        value: openDays,                               color: 'bg-emerald-50 text-emerald-600' },
-          { icon: X,           label: 'Closed Days',       value: 7 - openDays,                           color: 'bg-red-50 text-red-500'    },
-          { icon: Timer,       label: 'Hours / Week',      value: minutesToHours(totalHoursPerWeek) + 'h', color: 'bg-blue-50 text-blue-600'  },
-          { icon: Sun,         label: 'Avg Daily Hours',   value: avgDailyHours + 'h',                    color: 'bg-amber-50 text-amber-600' },
-        ].map((s, i) => {
-          const Icon = s.icon
-          return (
-            <motion.div key={i}
-              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
-              className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm"
-            >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${s.color}`}>
-                <Icon className="h-4 w-4" />
-              </div>
-              <p className="text-xl font-bold text-slate-800 tracking-tight">{s.value}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">{s.label}</p>
-            </motion.div>
-          )
-        })}
+          {
+            icon: CheckCircle,
+            label: 'Open days',
+            value: String(openDays),
+            tone: 'bg-emerald-50 text-emerald-600',
+          },
+          {
+            icon: X,
+            label: 'Closed days',
+            value: String(7 - openDays),
+            tone: 'bg-red-50 text-red-500',
+          },
+          {
+            icon: Timer,
+            label: 'Hours / week',
+            value: formatDuration(weeklyMinutes),
+            tone: 'bg-blue-50 text-blue-600',
+          },
+          {
+            icon: Coffee,
+            label: 'Break periods',
+            value: String(breakCount),
+            tone: 'bg-amber-50 text-amber-600',
+          },
+        ].map((stat, index) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.06 }}
+            className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
+          >
+            <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl ${stat.tone}`}>
+              <stat.icon className="h-4 w-4" aria-hidden />
+            </div>
+            <p className="text-xl font-bold tracking-tight text-slate-800">{stat.value}</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">{stat.label}</p>
+          </motion.div>
+        ))}
       </div>
 
-      {/* ── Quick Presets ────────────────────────────────────────────────────── */}
+      {/* ── Presets ──────────────────────────────────────────────────────────── */}
       <SectionCard
-        icon={Zap}
-        title="Quick Presets"
-        description="Apply a schedule template instantly — customise afterwards"
+        icon={Clock}
+        title="Quick presets"
+        description="Replace the whole week with a template, then fine-tune each day"
         headerExtra={
-          <Button variant="ghost" size="sm" onClick={resetToDefault}
-            className="text-xs text-slate-500 hover:text-slate-700 gap-1.5 h-7 px-2">
-            <RotateCcw className="h-3.5 w-3.5" /> Reset
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!isDirty}
+            onClick={revertAll}
+            className="h-7 gap-1.5 px-2 text-xs text-slate-500 hover:text-slate-700"
+          >
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+            Revert unsaved
           </Button>
         }
       >
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {QUICK_PRESETS.map((preset, i) => {
-            const Icon = preset.icon
-            return (
-              <motion.button
-                key={i}
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
-                onClick={() => applyPreset(preset)}
-                className="flex flex-col items-center gap-2 p-4 rounded-xl border border-slate-200 hover:border-[#2874f0] hover:bg-[#2874f0]/5 transition-all text-center group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-[#2874f0]/10 flex items-center justify-center transition-colors">
-                  <Icon className="h-5 w-5 text-slate-500 group-hover:text-[#2874f0] transition-colors" />
-                </div>
-                <span className="text-xs font-semibold text-slate-600 group-hover:text-[#2874f0] leading-tight transition-colors">
-                  {preset.label}
-                </span>
-              </motion.button>
-            )
-          })}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {PRESETS.map((preset, index) => (
+            <motion.button
+              key={preset.id}
+              type="button"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.06 }}
+              onClick={() =>
+                requestConfirm({
+                  title: `Apply “${preset.label}”?`,
+                  description: `This replaces all 7 days, including any breaks you have set, with ${preset.hint}. Nothing is saved until you press Save hours.`,
+                  confirmLabel: 'Apply preset',
+                  onConfirm: () => applyPreset(preset),
+                })
+              }
+              className="group flex flex-col items-center gap-2 rounded-xl border border-slate-200 p-4 text-center transition-all hover:border-[#2874f0] hover:bg-[#2874f0]/5"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 transition-colors group-hover:bg-[#2874f0]/10">
+                <preset.icon
+                  className="h-5 w-5 text-slate-500 transition-colors group-hover:text-[#2874f0]"
+                  aria-hidden
+                />
+              </span>
+              <span className="text-xs font-semibold leading-tight text-slate-600 transition-colors group-hover:text-[#2874f0]">
+                {preset.label}
+              </span>
+              <span className="text-[10px] leading-tight text-slate-400">{preset.hint}</span>
+            </motion.button>
+          ))}
         </div>
       </SectionCard>
 
-      {/* ── Visual Week Overview ─────────────────────────────────────────────── */}
-      <SectionCard icon={Calendar} title="Week at a Glance" description="24-hour timeline — blue = open, amber = break">
+      {/* ── Week at a glance ─────────────────────────────────────────────────── */}
+      <SectionCard
+        icon={Calendar}
+        title="Week at a glance"
+        description="24-hour timeline · blue = open, amber = break"
+      >
         <div className="space-y-3">
-          {/* Hour markers */}
-          <div className="flex text-[9px] text-slate-300 font-mono px-0 mb-1">
-            {['12a','3a','6a','9a','12p','3p','6p','9p','12a'].map((t, i) => (
-              <span key={i} className="flex-1 text-center">{t}</span>
+          <div className="mb-1 flex px-0 font-mono text-[9px] text-slate-300">
+            {TIMELINE_TICKS.map((tick, index) => (
+              // Index keys are correct here: these markers are static, evenly
+              // spaced and never reordered — and two of them legitimately share
+              // the label "12a" (the start and the end of the strip), so the
+              // label itself is not a unique key.
+              <span key={index} className="flex-1 text-center">
+                {tick}
+              </span>
             ))}
           </div>
-          {businessHours.map((h, i) => {
-            const day = DAYS.find(d => d.id === h.day)!
+
+          {draft.map((hour, index) => {
+            const meta = getDayMeta(hour.day)
             return (
-              <motion.div key={h.day}
-                initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
+              <motion.div
+                key={hour.day}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.04 }}
                 className="flex items-center gap-3"
               >
-                <span className={`w-9 text-[11px] font-bold shrink-0 ${day.weekend ? 'text-amber-500' : 'text-slate-500'}`}>
-                  {day.short}
+                <span
+                  className={`w-9 shrink-0 text-[11px] font-bold ${
+                    meta.isWeekend ? 'text-amber-500' : 'text-slate-500'
+                  }`}
+                >
+                  {meta.short}
                 </span>
                 <div className="flex-1">
-                  <DayTimeline hour={h} />
+                  <DayTimeline hour={hour} />
                 </div>
-                <span className="w-20 text-[10px] text-slate-400 font-medium text-right shrink-0">
-                  {h.isOpen ? `${fmt12(h.openTime).replace(' ', '')}` : 'Closed'}
+                <span className="w-28 shrink-0 text-right text-[10px] font-medium text-slate-400">
+                  {hour.isOpen
+                    ? `${formatTime12(hour.openTime)} – ${formatTime12(hour.closeTime)}`
+                    : 'Closed'}
                 </span>
               </motion.div>
             )
           })}
-          <div className="flex items-center gap-4 mt-2 pt-2 border-t border-slate-100">
+
+          <div className="mt-2 flex flex-wrap items-center gap-4 border-t border-slate-100 pt-2">
             <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-              <span className="w-3 h-2 bg-gradient-to-r from-[#2874f0] to-[#5b9bf8] rounded-sm inline-block" />
+              <span className="inline-block h-2 w-3 rounded-sm bg-gradient-to-r from-[#2874f0] to-[#5b9bf8]" />
               Open hours
             </span>
             <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-              <span className="w-3 h-2 bg-amber-300 rounded-sm inline-block" />
+              <span className="inline-block h-2 w-3 rounded-sm bg-amber-300" />
               Break time
             </span>
             <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-              <span className="w-3 h-2 bg-slate-200 rounded-sm inline-block" />
+              <span className="inline-block h-2 w-3 rounded-sm bg-slate-200" />
               Closed
             </span>
           </div>
         </div>
       </SectionCard>
 
-      {/* ── Weekly Schedule Editor ────────────────────────────────────────────── */}
+      {/* ── Weekly editor ────────────────────────────────────────────────────── */}
       <SectionCard
         icon={Clock}
-        title="Weekly Schedule"
-        description="Tap a day to expand and configure hours, breaks, and more"
+        title="Weekly schedule"
+        description="Expand a day to set its hours and breaks"
+        headerExtra={
+          <span className="text-xs font-medium text-slate-400">
+            {formatDuration(averageMinutes)} avg/day · {formatDuration(weeklyMinutes)} per week
+          </span>
+        }
       >
         <div className="space-y-2">
-          {businessHours.map((hour, idx) => {
-            const day = DAYS.find(d => d.id === hour.day)!
+          {draft.map((hour, index) => {
+            const meta = getDayMeta(hour.day)
+            const dayValidation = validation[hour.day]
             const isExpanded = expandedDay === hour.day
-            const hoursToday = getDayHours(hour)
+            const savedDay = saved.find((item) => item.day === hour.day)
+            const dayDirty = !savedDay || !businessHoursEqual([hour], [savedDay])
+            const minutes = getDayMinutes(hour)
+            const panelId = `business-hours-panel-${hour.day}`
 
             return (
               <motion.div
                 key={hour.day}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.04 }}
-                className={`rounded-xl border transition-all overflow-hidden
-                  ${hour.isOpen
-                    ? 'bg-white border-slate-100 shadow-sm'
-                    : 'bg-slate-50/60 border-slate-100 opacity-70'
-                  }
-                  ${isExpanded ? 'ring-2 ring-[#2874f0]/20 border-[#2874f0]/30' : ''}`}
+                transition={{ delay: index * 0.04 }}
+                className={`overflow-hidden rounded-xl border transition-all ${
+                  hour.isOpen ? 'border-slate-100 bg-white shadow-sm' : 'border-slate-100 bg-slate-50/60'
+                } ${isExpanded ? 'border-[#2874f0]/30 ring-2 ring-[#2874f0]/20' : ''}`}
               >
-                {/* Day header row */}
-                <div
-                  className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-                  onClick={() => setExpandedDay(isExpanded ? null : hour.day)}
-                >
-                  {/* Day pill */}
-                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm
-                    ${hour.isOpen
-                      ? day.weekend ? 'bg-amber-50 text-amber-600' : 'bg-[#2874f0]/10 text-[#2874f0]'
-                      : 'bg-slate-100 text-slate-400'
-                    }`}>
-                    {day.short}
-                  </div>
+                <div className="flex items-center gap-3 px-3 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedDay(isExpanded ? null : hour.day)}
+                    aria-expanded={isExpanded}
+                    aria-controls={panelId}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-[#2874f0]/40"
+                  >
+                    <span
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${
+                        hour.isOpen
+                          ? meta.isWeekend
+                            ? 'bg-amber-50 text-amber-600'
+                            : 'bg-[#2874f0]/10 text-[#2874f0]'
+                          : 'bg-slate-100 text-slate-400'
+                      }`}
+                    >
+                      {meta.short}
+                    </span>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm text-slate-800 capitalize">{hour.day}</span>
-                      {day.weekend && (
-                        <span className="text-[10px] font-semibold text-amber-500 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-full">
-                          Weekend
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold capitalize text-slate-800">
+                          {meta.label}
                         </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {hour.isOpen
-                        ? `${fmt12(hour.openTime)} – ${fmt12(hour.closeTime)}${hour.breaks.length > 0 ? ` · ${hour.breaks.length} break` : ''}`
-                        : 'Closed all day'
-                      }
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    {hour.isOpen && (
-                      <span className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full hidden sm:inline-flex">
-                        {minutesToHours(hoursToday)}h
+                        {meta.isWeekend ? (
+                          <span className="rounded-full border border-amber-100 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-500">
+                            Weekend
+                          </span>
+                        ) : null}
+                        {dayDirty ? (
+                          <span className="rounded-full border border-amber-200 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                            Unsaved
+                          </span>
+                        ) : null}
+                        {dayValidation?.hasError ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
+                            <AlertCircle className="h-3 w-3" aria-hidden />
+                            Check times
+                          </span>
+                        ) : null}
                       </span>
-                    )}
+                      <span className="mt-0.5 block truncate text-xs text-slate-400">
+                        {hour.isOpen
+                          ? `${formatTime12(hour.openTime)} – ${formatTime12(hour.closeTime)}${
+                              isOvernight(hour) ? ' (next day)' : ''
+                            }${hour.breaks.length > 0 ? ` · ${hour.breaks.length} break${hour.breaks.length === 1 ? '' : 's'}` : ''}`
+                          : 'Closed all day'}
+                      </span>
+                    </span>
+
+                    <ChevronDown
+                      className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${
+                        isExpanded ? 'rotate-180' : ''
+                      }`}
+                      aria-hidden
+                    />
+                  </button>
+
+                  <div className="flex shrink-0 items-center gap-3">
+                    {hour.isOpen ? (
+                      <span className="hidden rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-600 sm:inline-flex">
+                        {formatDuration(minutes)}
+                      </span>
+                    ) : null}
                     <Switch
                       checked={hour.isOpen}
-                      onCheckedChange={(v) => { update(hour.day, { isOpen: v }); setExpandedDay(v ? hour.day : null) }}
-                      onClick={(e) => e.stopPropagation()}
+                      onCheckedChange={(checked) => {
+                        patchDay(hour.day, { isOpen: checked })
+                        setExpandedDay(checked ? hour.day : null)
+                      }}
+                      aria-label={`${meta.label} ${hour.isOpen ? 'open' : 'closed'}`}
                     />
-                    <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                   </div>
                 </div>
 
-                {/* Expanded detail */}
-                <AnimatePresence>
-                  {isExpanded && hour.isOpen && (
+                <AnimatePresence initial={false}>
+                  {isExpanded ? (
                     <motion.div
+                      id={panelId}
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
                       transition={{ duration: 0.2 }}
                       className="overflow-hidden"
                     >
-                      <div className="border-t border-slate-100 px-4 pb-4 pt-3 space-y-4">
-
-                        {/* Open / Close times */}
-                        <div>
-                          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Operating Hours</p>
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                              <Sun className="h-4 w-4 text-amber-500 shrink-0" />
-                              <span className="text-xs text-slate-500 font-medium">Opens</span>
-                              <TimeSelect value={hour.openTime} onChange={(v) => update(hour.day, { openTime: v })} />
-                            </div>
-                            <span className="text-slate-300 text-sm font-bold">→</span>
-                            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                              <Moon className="h-4 w-4 text-indigo-400 shrink-0" />
-                              <span className="text-xs text-slate-500 font-medium">Closes</span>
-                              <TimeSelect value={hour.closeTime} onChange={(v) => update(hour.day, { closeTime: v })} />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Breaks */}
-                        {hour.breaks.length > 0 && (
-                          <div>
-                            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                              <Coffee className="inline h-3 w-3 mr-1 text-amber-500" />
-                              Break Periods
-                            </p>
-                            <div className="space-y-2">
-                              {hour.breaks.map((b, bi) => (
-                                <div key={bi} className="flex items-center gap-2 flex-wrap">
-                                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-                                    <Coffee className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                                    <TimeSelect value={b.start} onChange={(v) => updateBreak(hour.day, bi, { start: v })} />
-                                    <span className="text-slate-400 text-xs">to</span>
-                                    <TimeSelect value={b.end} onChange={(v) => updateBreak(hour.day, bi, { end: v })} />
-                                  </div>
-                                  <Button type="button" variant="ghost" size="icon"
-                                    onClick={() => removeBreak(hour.day, bi)}
-                                    className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                                    <X className="h-4 w-4" />
-                                  </Button>
+                      <div className="space-y-4 border-t border-slate-100 px-4 pt-3 pb-4">
+                        {hour.isOpen ? (
+                          <>
+                            {/* Operating hours */}
+                            <div>
+                              <p className="mb-2 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                                Operating hours
+                              </p>
+                              <div className="flex flex-wrap items-center gap-3">
+                                <div
+                                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
+                                    dayValidation?.openTime
+                                      ? 'border-red-200 bg-red-50'
+                                      : 'border-slate-200 bg-slate-50'
+                                  }`}
+                                >
+                                  <Sun className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
+                                  <span className="text-xs font-medium text-slate-500">Opens</span>
+                                  <TimeSelect
+                                    value={hour.openTime}
+                                    onChange={(next) => patchDay(hour.day, { openTime: next })}
+                                    label={`${meta.label} opening time`}
+                                    invalid={Boolean(dayValidation?.openTime)}
+                                  />
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
 
-                        {/* Action row */}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          <Button type="button" variant="outline" size="sm"
-                            onClick={() => addBreak(hour.day)}
-                            className="text-xs gap-1.5 rounded-lg h-8 border-amber-200 text-amber-700 hover:bg-amber-50">
-                            <Coffee className="h-3.5 w-3.5" /> Add Break
-                          </Button>
-                          <Button type="button" variant="outline" size="sm"
-                            onClick={() => copyToAll(hour.day)}
-                            className="text-xs gap-1.5 rounded-lg h-8 border-[#2874f0]/30 text-[#2874f0] hover:bg-[#2874f0]/5">
-                            <Copy className="h-3.5 w-3.5" /> Copy to All Days
-                          </Button>
-                        </div>
+                                <span className="text-sm font-bold text-slate-300" aria-hidden>
+                                  →
+                                </span>
+
+                                <div
+                                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
+                                    dayValidation?.closeTime
+                                      ? 'border-red-200 bg-red-50'
+                                      : 'border-slate-200 bg-slate-50'
+                                  }`}
+                                >
+                                  <Moon className="h-4 w-4 shrink-0 text-indigo-400" aria-hidden />
+                                  <span className="text-xs font-medium text-slate-500">Closes</span>
+                                  <TimeSelect
+                                    value={hour.closeTime}
+                                    onChange={(next) => patchDay(hour.day, { closeTime: next })}
+                                    label={`${meta.label} closing time`}
+                                    invalid={Boolean(dayValidation?.closeTime)}
+                                  />
+                                </div>
+
+                                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                                  {formatDuration(minutes)} open
+                                </span>
+                              </div>
+
+                              {isOvernight(hour) ? (
+                                <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-600">
+                                  <Info className="h-3.5 w-3.5" aria-hidden />
+                                  Closing time is earlier than opening — this day runs past
+                                  midnight.
+                                </p>
+                              ) : null}
+
+                              {dayValidation?.openTime ? (
+                                <p className="mt-2 text-xs font-medium text-red-600">
+                                  {dayValidation.openTime}
+                                </p>
+                              ) : null}
+                              {dayValidation?.closeTime ? (
+                                <p className="mt-1 text-xs font-medium text-red-600">
+                                  {dayValidation.closeTime}
+                                </p>
+                              ) : null}
+                            </div>
+
+                            {/* Breaks */}
+                            <div>
+                              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                                <Coffee className="h-3 w-3 text-amber-500" aria-hidden />
+                                Break periods
+                              </p>
+
+                              {hour.breaks.length === 0 ? (
+                                <p className="text-xs text-slate-400">
+                                  No breaks — this day is open for the whole window.
+                                </p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {hour.breaks.map((brk, breakIndex) => (
+                                    <div key={breakIndex}>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <div
+                                          className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
+                                            dayValidation?.breaks[breakIndex]
+                                              ? 'border-red-200 bg-red-50'
+                                              : 'border-amber-100 bg-amber-50'
+                                          }`}
+                                        >
+                                          <Coffee
+                                            className="h-3.5 w-3.5 shrink-0 text-amber-500"
+                                            aria-hidden
+                                          />
+                                          <TimeSelect
+                                            value={brk.start}
+                                            onChange={(next) =>
+                                              patchBreak(hour.day, breakIndex, { start: next })
+                                            }
+                                            label={`${meta.label} break ${breakIndex + 1} start`}
+                                            invalid={Boolean(dayValidation?.breaks[breakIndex])}
+                                          />
+                                          <span className="text-xs text-slate-400">to</span>
+                                          <TimeSelect
+                                            value={brk.end}
+                                            onChange={(next) =>
+                                              patchBreak(hour.day, breakIndex, { end: next })
+                                            }
+                                            label={`${meta.label} break ${breakIndex + 1} end`}
+                                            invalid={Boolean(dayValidation?.breaks[breakIndex])}
+                                          />
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => removeBreak(hour.day, breakIndex)}
+                                          aria-label={`Remove break ${breakIndex + 1} on ${meta.label}`}
+                                          className="h-8 w-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600"
+                                        >
+                                          <Trash2 className="h-4 w-4" aria-hidden />
+                                        </Button>
+                                      </div>
+                                      {dayValidation?.breaks[breakIndex] ? (
+                                        <p className="mt-1 text-xs font-medium text-red-600">
+                                          {dayValidation.breaks[breakIndex]}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => addBreak(hour.day)}
+                                className="h-8 gap-1.5 rounded-lg border-amber-200 text-xs text-amber-700 hover:bg-amber-50"
+                              >
+                                <Plus className="h-3.5 w-3.5" aria-hidden />
+                                Add break
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  requestConfirm({
+                                    title: `Copy ${meta.label} to every day?`,
+                                    description: `All 7 days will use ${formatTime12(hour.openTime)} – ${formatTime12(hour.closeTime)} and the same ${hour.breaks.length} break${hour.breaks.length === 1 ? '' : 's'}, replacing what other days currently have. Nothing is saved until you press Save hours.`,
+                                    confirmLabel: 'Copy to all days',
+                                    onConfirm: () => copyDayToAll(hour.day),
+                                  })
+                                }
+                                className="h-8 gap-1.5 rounded-lg border-[#2874f0]/30 text-xs text-[#2874f0] hover:bg-[#2874f0]/5"
+                              >
+                                <Copy className="h-3.5 w-3.5" aria-hidden />
+                                Copy to all days
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={!dayDirty}
+                                onClick={() => revertDay(hour.day)}
+                                className="h-8 gap-1.5 rounded-lg text-xs text-slate-600"
+                              >
+                                <Undo2 className="h-3.5 w-3.5" aria-hidden />
+                                Undo this day
+                              </Button>
+                            </div>
+                          </>
+                        ) : (
+                          <p className="flex items-center gap-2 text-xs text-slate-400">
+                            <Info className="h-3.5 w-3.5" aria-hidden />
+                            Closed all day — turn the switch on to set opening hours.
+                          </p>
+                        )}
                       </div>
                     </motion.div>
-                  )}
+                  ) : null}
                 </AnimatePresence>
               </motion.div>
             )
@@ -625,117 +1231,177 @@ export default function BusinessHoursPage() {
         </div>
       </SectionCard>
 
-      {/* ── Why Hours Matter ─────────────────────────────────────────────────── */}
+      {/* ── Guidance ─────────────────────────────────────────────────────────── */}
       <div>
-        <div className="flex items-center gap-2 mb-4">
-          <Sparkles className="h-4 w-4 text-[#2874f0]" />
-          <h3 className="text-sm font-semibold text-slate-700">Why Accurate Hours Matter</h3>
-        </div>
-        <div className="grid sm:grid-cols-3 gap-3">
+        <h2 className="mb-4 text-sm font-semibold text-slate-700">Why accurate hours matter</h2>
+        <div className="grid gap-3 sm:grid-cols-3">
           {[
             {
-              icon: TrendingUp, title: 'Higher Booking Rate',
-              desc: 'Vendors with accurate hours see 40% more bookings — customers trust businesses that are transparent about availability.',
-              color: 'text-emerald-600', bg: 'bg-emerald-50',
+              icon: CheckCircle,
+              title: 'Customers know when to visit',
+              description:
+                'Publishing real hours avoids wasted trips and the complaints that follow them.',
+              tone: 'bg-emerald-50 text-emerald-600',
             },
             {
-              icon: Users, title: 'Better Customer Experience',
-              desc: 'Avoid frustrated customers who arrive when you\'re closed. Clear hours reduce negative reviews by up to 25%.',
-              color: 'text-blue-600', bg: 'bg-blue-50',
+              icon: Clock,
+              title: 'Fewer missed enquiries',
+              description:
+                'Requests that arrive while you are closed are the easiest ones to lose track of.',
+              tone: 'bg-blue-50 text-blue-600',
             },
             {
-              icon: Star, title: 'Improved Search Ranking',
-              desc: 'Businesses with complete profiles and defined hours rank higher in platform search results and discovery feeds.',
-              color: 'text-amber-600', bg: 'bg-amber-50',
+              icon: Star,
+              title: 'Complete listings rank better',
+              description:
+                'A fully configured profile signals an active store to buyers and to search.',
+              tone: 'bg-amber-50 text-amber-600',
             },
-          ].map((item, i) => {
-            const Icon = item.icon
-            return (
-              <motion.div key={i}
-                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
-                className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow"
-              >
-                <div className={`${item.bg} rounded-lg p-2 w-fit mb-3`}>
-                  <Icon className={`h-4 w-4 ${item.color}`} />
-                </div>
-                <p className="text-sm font-semibold text-slate-800">{item.title}</p>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">{item.desc}</p>
-              </motion.div>
-            )
-          })}
+          ].map((item, index) => (
+            <motion.div
+              key={item.title}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.07 }}
+              className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+            >
+              <span className={`mb-3 block w-fit rounded-lg p-2 ${item.tone}`}>
+                <item.icon className="h-4 w-4" aria-hidden />
+              </span>
+              <p className="text-sm font-semibold text-slate-800">{item.title}</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">{item.description}</p>
+            </motion.div>
+          ))}
         </div>
       </div>
 
-      {/* ── Holiday & Special Hours Notice ───────────────────────────────────── */}
+      {/* ── Holiday hours ────────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
         <div className="flex items-start gap-3">
-          <div className="bg-amber-100 rounded-lg p-2 shrink-0">
-            <AlertCircle className="h-5 w-5 text-amber-600" />
-          </div>
+          <span className="shrink-0 rounded-lg bg-amber-100 p-2">
+            <Calendar className="h-5 w-5 text-amber-600" aria-hidden />
+          </span>
           <div className="flex-1">
-            <p className="font-semibold text-amber-800">Holiday & Special Hours</p>
-            <p className="text-sm text-amber-700 mt-1 leading-relaxed">
-              Planning to close for a festival, maintenance, or local holiday? Contact our Vendor Support team to set
-              temporary closure notices or custom date-specific hours. These will appear as banners on your product
-              listings so customers are informed in advance.
+            <p className="font-semibold text-amber-800">Holiday &amp; date-specific hours</p>
+            <p className="mt-1 text-sm leading-relaxed text-amber-700">
+              This page manages your regular weekly schedule. For a one-off closure or special
+              festival hours, raise a request with Vendor Support and we&apos;ll apply the dates to
+              your storefront.
             </p>
-            <Button size="sm" variant="outline"
-              className="mt-3 border-amber-300 text-amber-800 hover:bg-amber-100 rounded-lg text-xs font-semibold gap-1.5">
-              <Calendar className="h-3.5 w-3.5" /> Request Holiday Schedule
+            <Button
+              asChild
+              size="sm"
+              variant="outline"
+              className="mt-3 gap-1.5 rounded-lg border-amber-300 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              <Link href="/vendor/support">
+                <Calendar className="h-3.5 w-3.5" aria-hidden />
+                Request holiday hours
+              </Link>
             </Button>
           </div>
         </div>
       </div>
 
-      {/* ── Platform Statement ───────────────────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl p-5 text-white shadow-lg">
+      {/* ── Platform note ────────────────────────────────────────────────────── */}
+      <div className="rounded-2xl bg-gradient-to-r from-slate-800 to-slate-700 p-5 text-white shadow-lg">
         <div className="flex items-start gap-3">
-          <div className="bg-white/10 rounded-lg p-2 shrink-0">
-            <Globe className="h-5 w-5 text-blue-300" />
-          </div>
+          <span className="shrink-0 rounded-lg bg-white/10 p-2">
+            <Globe className="h-5 w-5 text-blue-300" aria-hidden />
+          </span>
           <div>
-            <p className="font-semibold text-sm">Real-Time Availability on Platform</p>
-            <p className="text-slate-300 text-xs mt-1 leading-relaxed">
-              Your business hours are reflected <strong className="text-white">live on your product listings</strong> within
-              minutes of saving. Customers see an "Open Now" or "Closed" badge in real time, and our booking engine
-              automatically blocks rental requests outside your configured hours. Timezone is auto-detected based on your
-              registered address.
+            <p className="text-sm font-semibold">Where these hours are used</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-300">
+              Your saved schedule drives the availability shown on your product listings and is
+              applied when rental requests are checked against your opening window. Times are read
+              in the timezone of your registered address.
             </p>
-            <div className="flex flex-wrap gap-2 mt-3">
-              {['Live Updates', 'Auto Timezone', 'Booking Gate', 'Customer Visibility', 'Search Indexed'].map((t) => (
-                <span key={t} className="text-[10px] font-semibold bg-white/10 border border-white/20 px-2 py-0.5 rounded-full text-slate-200">
-                  {t}
-                </span>
-              ))}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {['Product listings', 'Request checks', 'Support context', 'Search indexing'].map(
+                (tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-slate-200"
+                  >
+                    {tag}
+                  </span>
+                )
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Sticky Footer ────────────────────────────────────────────────────── */}
+      {/* ── Sticky save bar ──────────────────────────────────────────────────── */}
       <AnimatePresence>
-        {hasChanges && (
+        {isDirty ? (
           <motion.div
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-            className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-slate-100 -mx-4 px-4 py-4 flex items-center justify-between rounded-b-2xl shadow-lg"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="sticky bottom-0 -mx-4 flex flex-wrap items-center justify-between gap-3 rounded-b-2xl border-t border-slate-100 bg-white/95 px-4 py-4 shadow-lg backdrop-blur"
           >
-            <p className="text-xs text-slate-400 flex items-center gap-1.5">
-              <Info className="h-3.5 w-3.5" />
-              Unsaved changes · Live in &lt; 5 minutes after saving
+            <p className="flex items-center gap-1.5 text-xs text-slate-400">
+              {invalidDays > 0 ? (
+                <>
+                  <AlertCircle className="h-3.5 w-3.5 text-red-500" aria-hidden />
+                  {invalidDays} day{invalidDays === 1 ? '' : 's'} need fixing before you can save
+                </>
+              ) : (
+                <>
+                  <Info className="h-3.5 w-3.5" aria-hidden />
+                  Unsaved changes
+                </>
+              )}
             </p>
-            <Button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="bg-[#2874f0] hover:bg-[#1a55c4] text-white font-semibold gap-2 px-8 rounded-xl shadow-md shadow-[#2874f0]/30"
-            >
-              {isSaving
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
-                : <><Save className="h-4 w-4" /> Save Business Hours</>
-              }
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={revertAll}
+                className="rounded-xl font-semibold"
+              >
+                Discard
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={isSaving || invalidDays > 0}
+                className="gap-2 rounded-xl bg-[#2874f0] px-8 font-semibold text-white shadow-md shadow-[#2874f0]/30 hover:bg-[#1a55c4]"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" aria-hidden />
+                    Save business hours
+                  </>
+                )}
+              </Button>
+            </div>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
+
+      {/* ── Confirmation dialog ──────────────────────────────────────────────── */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmRequest?.title ?? ''}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmRequest?.description ?? ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => confirmRequest?.onConfirm()}>
+              {confirmRequest?.confirmLabel ?? 'Confirm'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

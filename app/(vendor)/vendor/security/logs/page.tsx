@@ -1,7 +1,8 @@
 // app/vendor/security/logs/page.tsx (Security Logs)
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSession } from 'next-auth/react'
 import { motion } from 'framer-motion'
 import {
   Activity, Search, Filter, Download, RefreshCw,
@@ -11,10 +12,21 @@ import {
   Database, Globe, Server, Terminal
 } from 'lucide-react'
 import { format } from 'date-fns'
+import { useToast } from '@/hooks/useToast'
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
+
+async function getAuthHeaders() {
+  const { getSession } = await import('next-auth/react')
+  const session = await getSession()
+  return {
+    'Authorization': session?.user?.accessToken ? `Bearer ${session.user.accessToken}` : '',
+  }
+}
 
 interface SecurityLog {
   id: string
-  type: 'login' | 'logout' | 'api_access' | 'settings_change' | 'password_change' | '2fa' | 'security_alert'
+  type: string
   action: string
   severity: 'info' | 'warning' | 'critical'
   ip: string
@@ -25,125 +37,44 @@ interface SecurityLog {
   details: Record<string, any>
 }
 
-const mockLogs: SecurityLog[] = [
-  {
-    id: '1',
-    type: 'login',
-    action: 'Successful login',
-    severity: 'info',
-    ip: '103.58.154.78',
-    location: 'Mumbai, India',
-    device: 'Chrome on Windows',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    timestamp: '2024-01-15T10:30:00',
-    details: { method: 'password', twoFactorUsed: true }
-  },
-  {
-    id: '2',
-    type: 'api_access',
-    action: 'API key used',
-    severity: 'info',
-    ip: '45.118.167.34',
-    location: 'Bangalore, India',
-    device: 'Production Server',
-    userAgent: 'RentEase-API-Client/1.0',
-    timestamp: '2024-01-15T09:15:00',
-    details: { endpoint: '/api/v1/products', keyName: 'Production App', statusCode: 200 }
-  },
-  {
-    id: '3',
-    type: 'settings_change',
-    action: 'Notification settings updated',
-    severity: 'info',
-    ip: '103.58.154.78',
-    location: 'Mumbai, India',
-    device: 'Chrome on Windows',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    timestamp: '2024-01-14T16:20:00',
-    details: { changes: ['email_notifications', 'sms_alerts'] }
-  },
-  {
-    id: '4',
-    type: 'security_alert',
-    action: 'Failed login attempt',
-    severity: 'warning',
-    ip: '203.192.245.99',
-    location: 'Unknown',
-    device: 'Unknown Device',
-    userAgent: 'Mozilla/5.0 (compatible; Unknown)',
-    timestamp: '2024-01-14T22:10:00',
-    details: { attempts: 3, reason: 'Invalid password' }
-  },
-  {
-    id: '5',
-    type: 'logout',
-    action: 'Session ended',
-    severity: 'info',
-    ip: '103.58.154.78',
-    location: 'Mumbai, India',
-    device: 'Safari on iPhone',
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-    timestamp: '2024-01-14T15:30:00',
-    details: { sessionDuration: '2h 15m', reason: 'user_initiated' }
-  },
-  {
-    id: '6',
-    type: 'password_change',
-    action: 'Password changed',
-    severity: 'info',
-    ip: '103.58.154.78',
-    location: 'Mumbai, India',
-    device: 'Chrome on Windows',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    timestamp: '2024-01-13T11:45:00',
-    details: { method: 'user_initiated' }
-  },
-  {
-    id: '7',
-    type: '2fa',
-    action: '2FA enabled',
-    severity: 'info',
-    ip: '103.58.154.78',
-    location: 'Mumbai, India',
-    device: 'Chrome on Windows',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    timestamp: '2024-01-13T11:30:00',
-    details: { method: 'authenticator_app' }
-  },
-  {
-    id: '8',
-    type: 'security_alert',
-    action: 'Suspicious activity detected',
-    severity: 'critical',
-    ip: '45.189.234.67',
-    location: 'Singapore',
-    device: 'Unknown Device',
-    userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
-    timestamp: '2024-01-12T03:15:00',
-    details: { reason: 'Multiple rapid requests', blocked: true }
-  },
-  {
-    id: '9',
-    type: 'api_access',
-    action: 'API rate limit reached',
-    severity: 'warning',
-    ip: '45.118.167.34',
-    location: 'Bangalore, India',
-    device: 'Analytics Server',
-    userAgent: 'RentEase-API-Client/1.0',
-    timestamp: '2024-01-11T14:20:00',
-    details: { endpoint: '/api/v1/analytics', keyName: 'Analytics Integration', rateLimit: 1000, requests: 1023 }
-  }
-]
+interface LogStats {
+  total: number
+  critical: number
+  warning: number
+  info: number
+}
+
+/**
+ * The dropdown expresses *groups* of event types; the API accepts a
+ * comma-separated list, so each option maps to the concrete event types.
+ */
+const TYPE_FILTERS: Record<string, string> = {
+  all: 'all',
+  login: 'login,failed_login',
+  logout: 'logout,logout_all,session_revoked',
+  api_access: 'api_key_created,api_key_revoked,api_key_regenerated',
+  settings_change: 'settings_change',
+  password_change: 'password_change',
+  '2fa': '2fa_enabled,2fa_disabled,2fa_failed,recovery_codes_regenerated',
+  security_alert: 'security_alert',
+}
 
 const getLogIcon = (type: string) => {
   switch(type) {
     case 'login': return LogIn
     case 'logout': return LogIn
-    case 'api_access': return Key
+    case 'logout_all': return LogIn
+    case 'session_revoked': return LogIn
+    case 'failed_login': return AlertTriangle
+    case 'api_key_created': return Key
+    case 'api_key_revoked': return Key
+    case 'api_key_regenerated': return Key
     case 'settings_change': return Settings
     case 'password_change': return Lock
-    case '2fa': return Shield
+    case '2fa_enabled': return Shield
+    case '2fa_disabled': return Shield
+    case '2fa_failed': return Shield
+    case 'recovery_codes_regenerated': return Shield
     case 'security_alert': return AlertTriangle
     default: return Activity
   }
@@ -161,27 +92,124 @@ const getSeverityConfig = (severity: string) => {
 }
 
 export default function SecurityLogsPage() {
-  const [logs, setLogs] = useState<SecurityLog[]>(mockLogs)
+  const { status } = useSession()
+  const toast = useToast()
+
+  const [logs, setLogs] = useState<SecurityLog[]>([])
+  const [stats, setStats] = useState<LogStats>({ total: 0, critical: 0, warning: 0, info: 0 })
+  const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 })
+
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
   const [filterSeverity, setFilterSeverity] = useState<string>('all')
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
   const [selectedLog, setSelectedLog] = useState<SecurityLog | null>(null)
 
-  const filteredLogs = logs.filter(log => {
-    if (searchTerm && !log.action.toLowerCase().includes(searchTerm.toLowerCase()) && !log.ip.includes(searchTerm)) return false
-    if (filterType !== 'all' && log.type !== filterType) return false
-    if (filterSeverity !== 'all' && log.severity !== filterSeverity) return false
-    if (dateRange.start && new Date(log.timestamp) < new Date(dateRange.start)) return false
-    if (dateRange.end && new Date(log.timestamp) > new Date(dateRange.end)) return false
-    return true
-  })
+  const [isLoading, setIsLoading] = useState(true)
+  const [isExporting, setIsExporting] = useState(false)
 
-  const stats = {
-    total: logs.length,
-    critical: logs.filter(l => l.severity === 'critical').length,
-    warning: logs.filter(l => l.severity === 'warning').length,
-    info: logs.filter(l => l.severity === 'info').length
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const buildQuery = useCallback((page: number) => {
+    const params = new URLSearchParams({ page: String(page), limit: '10' })
+    const type = TYPE_FILTERS[filterType] || 'all'
+
+    if (type !== 'all') params.set('type', type)
+    if (filterSeverity !== 'all') params.set('severity', filterSeverity)
+    if (searchTerm.trim()) params.set('search', searchTerm.trim())
+    if (dateRange.start) params.set('startDate', dateRange.start)
+    if (dateRange.end) params.set('endDate', dateRange.end)
+
+    return params
+  }, [filterType, filterSeverity, searchTerm, dateRange])
+
+  const fetchLogs = useCallback(async (page = 1) => {
+    try {
+      setIsLoading(true)
+      const headers = await getAuthHeaders()
+      const params = buildQuery(page)
+
+      const res = await fetch(`${BASE_URL}/api/v1/vendor/security/logs?${params.toString()}`, { headers })
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to load security logs')
+      }
+
+      setLogs(data.data.logs || [])
+      setStats(data.data.stats || { total: 0, critical: 0, warning: 0, info: 0 })
+      setPagination(data.data.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 })
+    } catch (error: any) {
+      console.error('Error loading security logs:', error)
+      toast.error(error.message || 'Failed to load security logs')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [buildQuery, toast])
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      fetchLogs(1)
+    } else if (status === 'unauthenticated') {
+      setIsLoading(false)
+    }
+  }, [status, fetchLogs])
+
+  /**
+   * Re-query whenever a filter changes, debouncing free-text search so typing
+   * does not fire a request per keystroke.
+   */
+  useEffect(() => {
+    if (status !== 'authenticated') return
+
+    if (searchDebounce.current) clearTimeout(searchDebounce.current)
+    searchDebounce.current = setTimeout(() => fetchLogs(1), 350)
+
+    return () => {
+      if (searchDebounce.current) clearTimeout(searchDebounce.current)
+    }
+  }, [searchTerm, filterType, filterSeverity, dateRange.start, dateRange.end, status, fetchLogs])
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      const headers = await getAuthHeaders()
+      const params = buildQuery(1)
+
+      const res = await fetch(`${BASE_URL}/api/v1/vendor/security/logs/export?${params.toString()}`, { headers })
+
+      if (!res.ok) {
+        throw new Error('Failed to export logs')
+      }
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `security-logs-${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      toast.success('Security logs exported')
+    } catch (error: any) {
+      console.error('Error exporting logs:', error)
+      toast.error(error.message || 'Failed to export logs')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const clearFilters = () => {
+    setSearchTerm('')
+    setFilterType('all')
+    setFilterSeverity('all')
+    setDateRange({ start: '', end: '' })
+  }
+
+  const goToPage = (page: number) => {
+    if (page < 1 || page > pagination.totalPages) return
+    fetchLogs(page)
   }
 
   return (
@@ -194,7 +222,7 @@ export default function SecurityLogsPage() {
             <span className="text-xs text-slate-500">Total Events</span>
           </div>
           <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-          <p className="text-xs text-slate-500 mt-1">Last 30 days</p>
+          <p className="text-xs text-slate-500 mt-1">All recorded events</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -232,9 +260,13 @@ export default function SecurityLogsPage() {
               <p className="text-xs text-blue-700">Download logs for compliance and auditing purposes</p>
             </div>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg text-blue-700 font-medium hover:bg-blue-50 transition-colors">
+          <button
+            onClick={handleExport}
+            disabled={isExporting || stats.total === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg text-blue-700 font-medium hover:bg-blue-50 transition-colors disabled:opacity-50"
+          >
             <Download className="h-4 w-4" />
-            Export Logs (CSV)
+            {isExporting ? 'Exporting...' : 'Export Logs (CSV)'}
           </button>
         </div>
       </div>
@@ -259,6 +291,7 @@ export default function SecurityLogsPage() {
           >
             <option value="all">All Event Types</option>
             <option value="login">Login Activity</option>
+            <option value="logout">Sessions &amp; Logouts</option>
             <option value="api_access">API Access</option>
             <option value="settings_change">Settings Changes</option>
             <option value="password_change">Password Changes</option>
@@ -275,13 +308,20 @@ export default function SecurityLogsPage() {
             <option value="warning">Warning</option>
             <option value="info">Info</option>
           </select>
+          <input
+            type="date"
+            value={dateRange.start}
+            onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+            className="px-3 py-2.5 text-sm border border-slate-200 rounded-lg bg-white"
+          />
+          <input
+            type="date"
+            value={dateRange.end}
+            onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+            className="px-3 py-2.5 text-sm border border-slate-200 rounded-lg bg-white"
+          />
           <button
-            onClick={() => {
-              setSearchTerm('')
-              setFilterType('all')
-              setFilterSeverity('all')
-              setDateRange({ start: '', end: '' })
-            }}
+            onClick={clearFilters}
             className="px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
           >
             Clear Filters
@@ -305,43 +345,49 @@ export default function SecurityLogsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredLogs.map((log) => {
-                const Icon = getLogIcon(log.type)
-                const severityConfig = getSeverityConfig(log.severity)
-                const SeverityIcon = severityConfig.icon
-                return (
-                  <tr key={log.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelectedLog(log)}>
-                    <td className="px-6 py-4 text-sm text-slate-500 whitespace-nowrap">
-                      {format(new Date(log.timestamp), 'dd MMM, hh:mm a')}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-slate-400" />
-                        <span className="text-sm text-slate-700">{log.action}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <code className="text-xs font-mono text-slate-500">{log.ip}</code>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-500">{log.location}</td>
-                    <td className="px-6 py-4 text-sm text-slate-500 max-w-[200px] truncate">{log.device}</td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium`}
-                        style={{ backgroundColor: severityConfig.bg, color: severityConfig.color }}>
-                        <SeverityIcon className="h-3 w-3" />
-                        {log.severity}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <Eye className="h-4 w-4 text-slate-400 hover:text-[#2874f0] transition-colors" />
-                    </td>
-                  </tr>
-                )
-              })}
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-500">Loading security logs...</td>
+                </tr>
+              ) : (
+                logs.map((log) => {
+                  const Icon = getLogIcon(log.type)
+                  const severityConfig = getSeverityConfig(log.severity)
+                  const SeverityIcon = severityConfig.icon
+                  return (
+                    <tr key={log.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelectedLog(log)}>
+                      <td className="px-6 py-4 text-sm text-slate-500 whitespace-nowrap">
+                        {log.timestamp ? format(new Date(log.timestamp), 'dd MMM, hh:mm a') : '—'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <Icon className="h-4 w-4 text-slate-400" />
+                          <span className="text-sm text-slate-700">{log.action}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <code className="text-xs font-mono text-slate-500">{log.ip || '—'}</code>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-500">{log.location}</td>
+                      <td className="px-6 py-4 text-sm text-slate-500 max-w-[200px] truncate">{log.device}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium`}
+                          style={{ backgroundColor: severityConfig.bg, color: severityConfig.color }}>
+                          <SeverityIcon className="h-3 w-3" />
+                          {log.severity}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <Eye className="h-4 w-4 text-slate-400 hover:text-[#2874f0] transition-colors" />
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>
-        {filteredLogs.length === 0 && (
+        {!isLoading && logs.length === 0 && (
           <div className="text-center py-12">
             <Activity className="h-12 w-12 mx-auto text-slate-300 mb-3" />
             <p className="text-slate-500">No security logs found</p>
@@ -350,15 +396,31 @@ export default function SecurityLogsPage() {
         )}
         {/* Pagination */}
         <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
-          <p className="text-sm text-slate-500">Showing {filteredLogs.length} of {logs.length} entries</p>
+          <p className="text-sm text-slate-500">Showing {logs.length} of {pagination.total} entries</p>
           <div className="flex gap-1.5">
-            <button className="p-2 rounded-lg border border-slate-200 disabled:opacity-40">
+            <button
+              onClick={() => goToPage(pagination.page - 1)}
+              disabled={pagination.page <= 1}
+              className="p-2 rounded-lg border border-slate-200 disabled:opacity-40"
+            >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button className="px-3 py-1 rounded-lg bg-[#2874f0] text-white text-sm">1</button>
-            <button className="px-3 py-1 rounded-lg hover:bg-slate-100 text-sm">2</button>
-            <button className="px-3 py-1 rounded-lg hover:bg-slate-100 text-sm">3</button>
-            <button className="p-2 rounded-lg border border-slate-200">
+            {Array.from({ length: Math.min(pagination.totalPages, 5) }, (_, index) => index + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => goToPage(page)}
+                className={`px-3 py-1 rounded-lg text-sm ${
+                  page === pagination.page ? 'bg-[#2874f0] text-white' : 'hover:bg-slate-100'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              onClick={() => goToPage(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages}
+              className="p-2 rounded-lg border border-slate-200 disabled:opacity-40"
+            >
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
@@ -386,7 +448,7 @@ export default function SecurityLogsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-slate-500 mb-1">Event Type</p>
-                    <p className="text-sm font-medium text-slate-700 capitalize">{selectedLog.type.replace('_', ' ')}</p>
+                    <p className="text-sm font-medium text-slate-700 capitalize">{selectedLog.type.replace(/_/g, ' ')}</p>
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 mb-1">Severity</p>
@@ -397,11 +459,13 @@ export default function SecurityLogsPage() {
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 mb-1">Timestamp</p>
-                    <p className="text-sm text-slate-700">{format(new Date(selectedLog.timestamp), 'dd MMM yyyy, hh:mm:ss a')}</p>
+                    <p className="text-sm text-slate-700">
+                      {selectedLog.timestamp ? format(new Date(selectedLog.timestamp), 'dd MMM yyyy, hh:mm:ss a') : '—'}
+                    </p>
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 mb-1">IP Address</p>
-                    <code className="text-sm font-mono text-slate-700">{selectedLog.ip}</code>
+                    <code className="text-sm font-mono text-slate-700">{selectedLog.ip || '—'}</code>
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 mb-1">Location</p>
@@ -414,13 +478,13 @@ export default function SecurityLogsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-slate-500 mb-1">User Agent</p>
-                  <p className="text-xs font-mono text-slate-500 break-all">{selectedLog.userAgent}</p>
+                  <p className="text-xs font-mono text-slate-500 break-all">{selectedLog.userAgent || '—'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500 mb-2">Additional Details</p>
                   <div className="bg-slate-50 rounded-lg p-3">
                     <pre className="text-xs font-mono text-slate-600 overflow-x-auto">
-                      {JSON.stringify(selectedLog.details, null, 2)}
+                      {JSON.stringify(selectedLog.details || {}, null, 2)}
                     </pre>
                   </div>
                 </div>

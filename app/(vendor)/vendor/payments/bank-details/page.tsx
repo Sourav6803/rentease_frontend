@@ -9,6 +9,9 @@ import {
   Save, Edit, X, Eye, EyeOff, Banknote, Lock, Phone, Mail
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
+import { useQueryClient } from '@tanstack/react-query'
+import { vendorProfileQueryOptions } from '@/lib/api/vendorProfile'
+import { vendorQueryKeys } from '@/lib/api/queryKeys'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -49,6 +52,7 @@ interface VendorBankInfo {
 
 export default function BankDetailsPage() {
   const { data: session, status } = useSession()
+  const queryClient = useQueryClient()
   const toast = useToast()
   
   const [isEditing, setIsEditing] = useState(false)
@@ -76,21 +80,23 @@ export default function BankDetailsPage() {
   
   const fetchBankDetails = async () => {
     try {
-      const headers = await getAuthHeaders()
-      const res = await fetch(`${BASE_URL}/api/v1/vendor/profile/me`, { headers })
-      const data = await res.json()
+      // Shared cache; `.catch(() => null)` preserves the silent failure
+      // behaviour this page had with its plain `fetch` implementation.
+      const profile = await queryClient
+        .fetchQuery(vendorProfileQueryOptions)
+        .catch(() => null)
       
-      if (data.success && data.data.bankDetails) {
+      if (profile?.bankDetails) {
         setBankDetails({
-          accountHolderName: data.data.bankDetails.accountHolderName || '',
-          accountNumber: data.data.bankDetails.accountNumber || '',
-          confirmAccountNumber: data.data.bankDetails.accountNumber || '',
-          bankName: data.data.bankDetails.bankName || '',
-          ifscCode: data.data.bankDetails.ifscCode || '',
-          branchName: data.data.bankDetails.branchName || '',
-          accountType: data.data.bankDetails.accountType || 'current',
-          upiId: data.data.bankDetails.upiId || '',
-          isVerified: data.data.bankDetails.verified || false
+          accountHolderName: profile.bankDetails.accountHolderName || '',
+          accountNumber: profile.bankDetails.accountNumber || '',
+          confirmAccountNumber: profile.bankDetails.accountNumber || '',
+          bankName: profile.bankDetails.bankName || '',
+          ifscCode: profile.bankDetails.ifscCode || '',
+          branchName: profile.bankDetails.branchName || '',
+          accountType: profile.bankDetails.accountType || 'current',
+          upiId: profile.bankDetails.upiId || '',
+          isVerified: profile.bankDetails.verified || false
         })
       }
     } catch (error) {
@@ -153,6 +159,9 @@ export default function BankDetailsPage() {
       if (data.success) {
         toast.success('Bank details updated successfully')
         setIsEditing(false)
+        // Drop the cached profile FIRST so the reload below reads the saved
+        // values instead of the stale cached copy.
+        await queryClient.invalidateQueries({ queryKey: vendorQueryKeys.profile })
         fetchBankDetails()
       } else {
         toast.error(data.message || 'Failed to update bank details')

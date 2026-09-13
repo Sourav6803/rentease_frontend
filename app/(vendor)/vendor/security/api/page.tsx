@@ -1,7 +1,7 @@
 // app/vendor/security/api/page.tsx (API Access Management)
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Key, Plus, Copy, Trash2, Eye, EyeOff, RefreshCw,
@@ -12,6 +12,18 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import { format } from 'date-fns'
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
+
+async function getAuthHeaders(json = false) {
+  const { getSession } = await import('next-auth/react')
+  const session = await getSession()
+  const headers: Record<string, string> = {
+    'Authorization': session?.user?.accessToken ? `Bearer ${session.user.accessToken}` : '',
+  }
+  if (json) headers['Content-Type'] = 'application/json'
+  return headers
+}
 
 interface APIKey {
   id: string
@@ -28,6 +40,16 @@ interface APIKey {
   allowedIPs: string[]
 }
 
+interface APIStats {
+  totalKeys: number
+  activeKeys: number
+  revokedKeys: number
+  expiredKeys: number
+  totalRequests: number
+  maxRateLimit: number
+  lastUsedAt: string | null
+}
+
 interface APIEndpoint {
   path: string
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
@@ -37,62 +59,32 @@ interface APIEndpoint {
   authRequired: boolean
 }
 
-const mockAPIKeys: APIKey[] = [
-  {
-    id: '1',
-    name: 'Production App',
-    key: 'rk_live_abc123def456ghi789jkl',
-    maskedKey: 'rk_live_***...jkl',
-    permissions: ['read', 'write'],
-    createdAt: '2024-01-10T10:00:00',
-    lastUsed: '2024-01-15T08:30:00',
-    expiresAt: '2025-01-10T10:00:00',
-    status: 'active',
-    usageCount: 12456,
-    rateLimit: 1000,
-    allowedIPs: ['103.58.154.78', '203.192.245.12']
-  },
-  {
-    id: '2',
-    name: 'Staging Environment',
-    key: 'rk_test_xyz789uvw456rst123',
-    maskedKey: 'rk_test_***...123',
-    permissions: ['read'],
-    createdAt: '2024-01-05T14:30:00',
-    lastUsed: '2024-01-14T16:45:00',
-    expiresAt: null,
-    status: 'active',
-    usageCount: 3421,
-    rateLimit: 500,
-    allowedIPs: []
-  },
-  {
-    id: '3',
-    name: 'Analytics Integration',
-    key: 'rk_live_def456ghi789jkl012',
-    maskedKey: 'rk_live_***...012',
-    permissions: ['read'],
-    createdAt: '2023-10-20T09:15:00',
-    lastUsed: '2024-01-12T11:20:00',
-    expiresAt: '2024-10-20T09:15:00',
-    status: 'active',
-    usageCount: 8923,
-    rateLimit: 2000,
-    allowedIPs: ['45.118.167.34']
-  }
-]
+const EMPTY_STATS: APIStats = {
+  totalKeys: 0,
+  activeKeys: 0,
+  revokedKeys: 0,
+  expiredKeys: 0,
+  totalRequests: 0,
+  maxRateLimit: 0,
+  lastUsedAt: null,
+}
 
+/**
+ * Reference documentation for the integration surface. These are the live
+ * platform routes, kept as static reference material (they are not derived from
+ * the vendor's own key state).
+ */
 const mockEndpoints: APIEndpoint[] = [
   { path: '/api/v1/products', method: 'GET', description: 'List all products', version: 'v1', rateLimit: '100/min', authRequired: true },
   { path: '/api/v1/products/:id', method: 'GET', description: 'Get product details', version: 'v1', rateLimit: '200/min', authRequired: true },
   { path: '/api/v1/products', method: 'POST', description: 'Create new product', version: 'v1', rateLimit: '50/min', authRequired: true },
   { path: '/api/v1/products/:id', method: 'PUT', description: 'Update product', version: 'v1', rateLimit: '50/min', authRequired: true },
-  { path: '/api/v1/orders', method: 'GET', description: 'List orders', version: 'v1', rateLimit: '100/min', authRequired: true },
-  { path: '/api/v1/orders/:id', method: 'GET', description: 'Get order details', version: 'v1', rateLimit: '200/min', authRequired: true },
   { path: '/api/v1/rentals', method: 'GET', description: 'List rentals', version: 'v1', rateLimit: '100/min', authRequired: true },
-  { path: '/api/v1/payments', method: 'GET', description: 'List payments', version: 'v1', rateLimit: '100/min', authRequired: true },
-  { path: '/api/v1/analytics', method: 'GET', description: 'Get analytics data', version: 'v1', rateLimit: '50/min', authRequired: true },
-  { path: '/api/v1/webhooks', method: 'POST', description: 'Register webhook', version: 'v1', rateLimit: '10/min', authRequired: true },
+  { path: '/api/v1/rentals/:id', method: 'GET', description: 'Get rental details', version: 'v1', rateLimit: '200/min', authRequired: true },
+  { path: '/api/v1/payments/vendor/me', method: 'GET', description: 'List vendor payments', version: 'v1', rateLimit: '100/min', authRequired: true },
+  { path: '/api/v1/vendor/analytics/overview', method: 'GET', description: 'Vendor analytics overview', version: 'v1', rateLimit: '50/min', authRequired: true },
+  { path: '/api/v1/reviews/vendor', method: 'GET', description: 'List vendor reviews', version: 'v1', rateLimit: '100/min', authRequired: true },
+  { path: '/api/v1/inventory', method: 'GET', description: 'List inventory', version: 'v1', rateLimit: '100/min', authRequired: true },
 ]
 
 function CreateAPIKeyModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
@@ -109,12 +101,32 @@ function CreateAPIKeyModal({ onClose, onSuccess }: { onClose: () => void; onSucc
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsCreating(true)
-    // Simulate API call
-    setTimeout(() => {
-      setNewKey('rk_live_new_' + Math.random().toString(36).substring(2, 15))
+    try {
+      const headers = await getAuthHeaders(true)
+      const res = await fetch(`${BASE_URL}/api/v1/vendor/security/api-keys`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: formData.name,
+          permissions: formData.permissions,
+          rateLimit: formData.rateLimit,
+          expiresIn: formData.expiresIn,
+        }),
+      })
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to create API key')
+      }
+
+      setNewKey(data.data.plaintextKey)
       toast.success('API key created successfully')
+    } catch (error: any) {
+      console.error('Error creating API key:', error)
+      toast.error(error.message || 'Failed to create API key')
+    } finally {
       setIsCreating(false)
-    }, 1500)
+    }
   }
 
   if (newKey) {
@@ -250,7 +262,7 @@ function CreateAPIKeyModal({ onClose, onSuccess }: { onClose: () => void; onSucc
               <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-slate-700">
                 Cancel
               </button>
-              <button type="submit" disabled={isCreating || !formData.name} className="flex-1 px-4 py-2 bg-[#2874f0] text-white rounded-lg font-semibold disabled:opacity-50">
+              <button type="submit" disabled={isCreating || !formData.name || formData.permissions.length === 0} className="flex-1 px-4 py-2 bg-[#2874f0] text-white rounded-lg font-semibold disabled:opacity-50">
                 {isCreating ? 'Creating...' : 'Create Key'}
               </button>
             </div>
@@ -261,7 +273,7 @@ function CreateAPIKeyModal({ onClose, onSuccess }: { onClose: () => void; onSucc
   )
 }
 
-function APIKeyCard({ apiKey, onRevoke, onRegenerate }: { apiKey: APIKey; onRevoke: (id: string) => void; onRegenerate: (id: string) => void }) {
+function APIKeyCard({ apiKey, onRevoke, onRegenerate, busy }: { apiKey: APIKey; onRevoke: (id: string) => void; onRegenerate: (id: string) => void; busy: boolean }) {
   const [showKey, setShowKey] = useState(false)
 
   const statusConfig = {
@@ -290,19 +302,21 @@ function APIKeyCard({ apiKey, onRevoke, onRegenerate }: { apiKey: APIKey; onRevo
           </div>
           <div className="flex items-center gap-2 mb-3">
             <code className="text-sm font-mono bg-slate-100 px-2 py-1 rounded">
-              {showKey ? apiKey.key : apiKey.maskedKey}
+              {/* Only the masked form is stored server-side; the full key is
+                  shown once, at creation / regeneration. */}
+              {showKey ? apiKey.maskedKey : apiKey.maskedKey}
             </code>
             <button onClick={() => setShowKey(!showKey)} className="p-1 hover:bg-slate-100 rounded">
               {showKey ? <EyeOff className="h-4 w-4 text-slate-400" /> : <Eye className="h-4 w-4 text-slate-400" />}
             </button>
-            <button onClick={() => navigator.clipboard.writeText(apiKey.key)} className="p-1 hover:bg-slate-100 rounded">
+            <button onClick={() => navigator.clipboard.writeText(apiKey.maskedKey)} className="p-1 hover:bg-slate-100 rounded">
               <Copy className="h-4 w-4 text-slate-400" />
             </button>
           </div>
           <div className="flex flex-wrap gap-4 text-sm">
             <div className="flex items-center gap-1 text-slate-500">
               <Calendar className="h-3.5 w-3.5" />
-              <span>Created: {format(new Date(apiKey.createdAt), 'dd MMM yyyy')}</span>
+              <span>Created: {apiKey.createdAt ? format(new Date(apiKey.createdAt), 'dd MMM yyyy') : '—'}</span>
             </div>
             {apiKey.lastUsed && (
               <div className="flex items-center gap-1 text-slate-500">
@@ -318,6 +332,12 @@ function APIKeyCard({ apiKey, onRevoke, onRegenerate }: { apiKey: APIKey; onRevo
               <Zap className="h-3.5 w-3.5" />
               <span>{apiKey.rateLimit}/min limit</span>
             </div>
+            {apiKey.expiresAt && (
+              <div className="flex items-center gap-1 text-slate-500">
+                <Clock className="h-3.5 w-3.5" />
+                <span>Expires: {format(new Date(apiKey.expiresAt), 'dd MMM yyyy')}</span>
+              </div>
+            )}
           </div>
           {apiKey.allowedIPs.length > 0 && (
             <div className="mt-2">
@@ -335,14 +355,16 @@ function APIKeyCard({ apiKey, onRevoke, onRegenerate }: { apiKey: APIKey; onRevo
         <div className="flex gap-2">
           <button
             onClick={() => onRegenerate(apiKey.id)}
-            className="p-1.5 hover:bg-amber-50 rounded-lg text-amber-600"
+            disabled={busy || apiKey.status === 'revoked'}
+            className="p-1.5 hover:bg-amber-50 rounded-lg text-amber-600 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Regenerate Key"
           >
             <RefreshCw className="h-4 w-4" />
           </button>
           <button
             onClick={() => onRevoke(apiKey.id)}
-            className="p-1.5 hover:bg-red-50 rounded-lg text-red-600"
+            disabled={busy || apiKey.status === 'revoked'}
+            className="p-1.5 hover:bg-red-50 rounded-lg text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Revoke Key"
           >
             <Trash2 className="h-4 w-4" />
@@ -355,27 +377,138 @@ function APIKeyCard({ apiKey, onRevoke, onRegenerate }: { apiKey: APIKey; onRevo
 
 export default function APIAccessPage() {
   const toast = useToast()
-  const [apiKeys, setApiKeys] = useState<APIKey[]>(mockAPIKeys)
+  const [apiKeys, setApiKeys] = useState<APIKey[]>([])
+  const [stats, setStats] = useState<APIStats>(EMPTY_STATS)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedEndpoint, setSelectedEndpoint] = useState<APIEndpoint | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [busyKeyId, setBusyKeyId] = useState<string | null>(null)
+  const [revealedKey, setRevealedKey] = useState<{ name: string; key: string } | null>(null)
 
-  const handleRevokeKey = (id: string) => {
-    if (confirm('Are you sure you want to revoke this API key? This action cannot be undone.')) {
-      setApiKeys(apiKeys.map(key => 
-        key.id === id ? { ...key, status: 'revoked' } : key
-      ))
+  const fetchApiKeys = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      const headers = await getAuthHeaders()
+
+      const [keysRes, statsRes] = await Promise.all([
+        fetch(`${BASE_URL}/api/v1/vendor/security/api-keys`, { headers }),
+        fetch(`${BASE_URL}/api/v1/vendor/security/api-keys/stats`, { headers }),
+      ])
+
+      const keysData = await keysRes.json()
+      const statsData = await statsRes.json()
+
+      if (!keysRes.ok || !keysData.success) {
+        throw new Error(keysData.message || 'Failed to load API keys')
+      }
+
+      setApiKeys(keysData.data.apiKeys || [])
+
+      if (statsRes.ok && statsData.success) {
+        setStats({ ...EMPTY_STATS, ...statsData.data.stats })
+      }
+    } catch (error: any) {
+      console.error('Error loading API keys:', error)
+      toast.error(error.message || 'Failed to load API keys')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => {
+    fetchApiKeys()
+  }, [fetchApiKeys])
+
+  const handleRevokeKey = async (id: string) => {
+    if (!confirm('Are you sure you want to revoke this API key? This action cannot be undone.')) return
+
+    setBusyKeyId(id)
+    try {
+      const headers = await getAuthHeaders(true)
+      const res = await fetch(`${BASE_URL}/api/v1/vendor/security/api-keys/${id}`, {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ reason: 'Revoked from the vendor security centre' }),
+      })
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to revoke API key')
+      }
+
+      setApiKeys((prev) => prev.map((key) => key.id === id ? { ...key, status: 'revoked' } : key))
       toast.success('API key revoked successfully')
+      fetchApiKeys()
+    } catch (error: any) {
+      console.error('Error revoking API key:', error)
+      toast.error(error.message || 'Failed to revoke API key')
+    } finally {
+      setBusyKeyId(null)
     }
   }
 
-  const handleRegenerateKey = (id: string) => {
-    if (confirm('Regenerating this key will invalidate the old one. Continue?')) {
+  const handleRegenerateKey = async (id: string) => {
+    if (!confirm('Regenerating this key will invalidate the old one immediately. Continue?')) return
+
+    setBusyKeyId(id)
+    try {
+      const headers = await getAuthHeaders(true)
+      const res = await fetch(`${BASE_URL}/api/v1/vendor/security/api-keys/${id}/regenerate`, {
+        method: 'POST',
+        headers,
+      })
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to regenerate API key')
+      }
+
+      setRevealedKey({ name: data.data.apiKey.name, key: data.data.plaintextKey })
       toast.success('New API key generated')
+      fetchApiKeys()
+    } catch (error: any) {
+      console.error('Error regenerating API key:', error)
+      toast.error(error.message || 'Failed to regenerate API key')
+    } finally {
+      setBusyKeyId(null)
     }
   }
 
   return (
     <div className="space-y-6">
+      {/* Newly generated key — shown once */}
+      {revealedKey && (
+        <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-800">
+                New key for "{revealedKey.name}" — copy it now, it won't be shown again
+              </p>
+              <div className="mt-2 p-3 bg-white rounded-lg">
+                <code className="text-sm font-mono break-all">{revealedKey.key}</code>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(revealedKey.key)
+                  toast.success('Copied to clipboard')
+                }}
+                className="px-3 py-1.5 text-sm bg-[#2874f0] text-white rounded-lg font-medium"
+              >
+                Copy
+              </button>
+              <button
+                onClick={() => setRevealedKey(null)}
+                className="px-3 py-1.5 text-sm border border-slate-200 bg-white rounded-lg"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* API Overview Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
@@ -383,31 +516,36 @@ export default function APIAccessPage() {
             <Key className="h-4 w-4 text-[#2874f0]" />
             <span className="text-xs text-slate-500">Active Keys</span>
           </div>
-          <p className="text-2xl font-bold text-slate-900">{apiKeys.filter(k => k.status === 'active').length}</p>
+          <p className="text-2xl font-bold text-slate-900">{stats.activeKeys}</p>
+          <p className="text-xs text-slate-500 mt-1">{stats.totalKeys} total</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-2">
             <Activity className="h-4 w-4 text-green-600" />
             <span className="text-xs text-slate-500">Total Requests</span>
           </div>
-          <p className="text-2xl font-bold text-slate-900">24,867</p>
-          <p className="text-xs text-green-600 mt-1">+12% this month</p>
+          <p className="text-2xl font-bold text-slate-900">{stats.totalRequests.toLocaleString()}</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {stats.lastUsedAt ? `Last used ${format(new Date(stats.lastUsedAt), 'dd MMM')}` : 'Never used'}
+          </p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-2">
             <Server className="h-4 w-4 text-purple-600" />
             <span className="text-xs text-slate-500">Rate Limit</span>
           </div>
-          <p className="text-2xl font-bold text-slate-900">1,000/min</p>
-          <p className="text-xs text-slate-500 mt-1">Current usage: 23%</p>
+          <p className="text-2xl font-bold text-slate-900">
+            {stats.maxRateLimit ? `${stats.maxRateLimit.toLocaleString()}/min` : '—'}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">Highest active limit</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-2">
-            <Clock className="h-4 w-4 text-amber-600" />
-            <span className="text-xs text-slate-500">Avg Response</span>
+            <AlertCircle className="h-4 w-4 text-amber-600" />
+            <span className="text-xs text-slate-500">Revoked / Expired</span>
           </div>
-          <p className="text-2xl font-bold text-slate-900">142ms</p>
-          <p className="text-xs text-green-600 mt-1">-8ms from last week</p>
+          <p className="text-2xl font-bold text-slate-900">{stats.revokedKeys + stats.expiredKeys}</p>
+          <p className="text-xs text-slate-500 mt-1">{stats.revokedKeys} revoked · {stats.expiredKeys} expired</p>
         </div>
       </div>
 
@@ -427,11 +565,18 @@ export default function APIAccessPage() {
           </button>
         </div>
         <div className="p-6 space-y-4">
-          {apiKeys.length === 0 ? (
+          {isLoading ? (
+            <div className="text-center py-8">
+              <RefreshCw className="h-8 w-8 mx-auto text-slate-300 mb-3 animate-spin" />
+              <p className="text-slate-500">Loading API keys...</p>
+            </div>
+          ) : apiKeys.length === 0 ? (
             <div className="text-center py-8">
               <Key className="h-12 w-12 mx-auto text-slate-300 mb-3" />
               <p className="text-slate-500">No API keys created yet</p>
-              <button className="mt-2 text-[#2874f0] text-sm">Create your first API key</button>
+              <button onClick={() => setShowCreateModal(true)} className="mt-2 text-[#2874f0] text-sm">
+                Create your first API key
+              </button>
             </div>
           ) : (
             apiKeys.map(key => (
@@ -440,6 +585,7 @@ export default function APIAccessPage() {
                 apiKey={key}
                 onRevoke={handleRevokeKey}
                 onRegenerate={handleRegenerateKey}
+                busy={busyKeyId === key.id}
               />
             ))
           )}
@@ -512,19 +658,31 @@ export default function APIAccessPage() {
           </div>
           <div className="flex-1">
             <h3 className="font-semibold text-slate-800">Webhook Configuration</h3>
-            <p className="text-sm text-slate-500 mt-1">Receive real-time updates about orders, payments, and events</p>
-            <div className="mt-4 flex items-center gap-3">
+            <p className="text-sm text-slate-500 mt-1">
+              Receive real-time updates about orders, payments, and events
+            </p>
+            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-xs text-amber-800 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                Vendor webhook registration is not enabled on this account yet. Inbound payment
+                webhooks (Stripe, Razorpay) are handled by the platform automatically.
+              </p>
+            </div>
+            <div className="mt-4 flex items-center gap-3 opacity-60">
               <input
                 type="url"
                 placeholder="https://your-domain.com/webhook"
-                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2874f0]/30"
+                disabled
+                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 cursor-not-allowed"
               />
-              <button className="px-4 py-2 bg-[#2874f0] text-white rounded-lg font-semibold">Save Webhook</button>
+              <button disabled className="px-4 py-2 bg-slate-200 text-slate-500 rounded-lg font-semibold cursor-not-allowed">
+                Save Webhook
+              </button>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {['order.created', 'order.updated', 'payment.success', 'rental.active'].map(event => (
-                <label key={event} className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg text-sm">
-                  <input type="checkbox" className="rounded" />
+                <label key={event} className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg text-sm opacity-60">
+                  <input type="checkbox" className="rounded" disabled />
                   {event}
                 </label>
               ))}
@@ -537,7 +695,10 @@ export default function APIAccessPage() {
       {showCreateModal && (
         <CreateAPIKeyModal
           onClose={() => setShowCreateModal(false)}
-          onSuccess={() => setShowCreateModal(false)}
+          onSuccess={() => {
+            setShowCreateModal(false)
+            fetchApiKeys()
+          }}
         />
       )}
 
@@ -582,9 +743,9 @@ export default function APIAccessPage() {
                   <h4 className="text-sm font-semibold text-slate-700 mb-2">Example Request</h4>
                   <div className="bg-slate-900 rounded-lg p-3">
                     <pre className="text-xs text-green-400 font-mono overflow-x-auto">
-{`curl -X ${selectedEndpoint.method} \\
-  https://api.rentease.com${selectedEndpoint.path} \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
+{`curl -X ${selectedEndpoint.method} \\\\
+  https://api.rentease.com${selectedEndpoint.path} \\\\
+  -H "Authorization: Bearer YOUR_API_KEY" \\\\
   -H "Content-Type: application/json"`}
                     </pre>
                   </div>

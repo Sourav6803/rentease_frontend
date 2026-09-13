@@ -1,7 +1,7 @@
 // src/app/admin/settings/payments/page.tsx
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import {
@@ -174,6 +174,9 @@ export default function PaymentSettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [showKeySecret, setShowKeySecret] = useState(false)
   const [showWebhookSecret, setShowWebhookSecret] = useState(false)
+  // Separate from the payment-gateway toggles above: the payout key is a different
+  // credential (RazorpayX) and revealing one should not reveal the other.
+  const [showPayoutKeySecret, setShowPayoutKeySecret] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
   const [razorpaySettings, setRazorpaySettings] = useState<RazorpaySettings>({
@@ -213,7 +216,14 @@ export default function PaymentSettingsPage() {
     taxRate: 18,
     autoPayout: true,
     payoutDay: 1,
-    holdPeriod: 7
+    holdPeriod: 7,
+    // Mirrors the backend defaults in getDefaultPaymentSettings(): payouts start
+    // disabled and in test mode, so a saved form can never arm live money by accident.
+    razorpayPayoutEnabled: false,
+    razorpayAccount: '',
+    keyId: '',
+    keySecret: '',
+    testMode: true
   })
 
   const [refundSettings, setRefundSettings] = useState<RefundSettings>({
@@ -225,6 +235,17 @@ export default function PaymentSettingsPage() {
   })
 
   const [stats, setStats] = useState<PaymentStatsType | null>(null)
+
+  /**
+   * True once the first fetch has finished.
+   *
+   * The render gate below used to be `isLoading` alone, and `fetchPaymentSettings`
+   * sets `isLoading` on EVERY run. So any background re-run replaced the entire form
+   * with a full-page spinner and then repopulated it from the server — which is why
+   * this looked like the page "refreshing" and throwing away what had been typed.
+   * Only the first load may show that spinner now.
+   */
+  const [initialLoadDone, setInitialLoadDone] = useState(false)
 
   const fetchPaymentSettings = useCallback(async () => {
     setIsLoading(true)
@@ -245,6 +266,7 @@ export default function PaymentSettingsPage() {
       toast.error('Failed to load payment settings')
     } finally {
       setIsLoading(false)
+      setInitialLoadDone(true)
     }
   }, [session])
 
@@ -261,16 +283,49 @@ export default function PaymentSettingsPage() {
     }
   }, [session])
 
+  /**
+   * Loads the settings EXACTLY ONCE per authenticated session.
+   *
+   * This effect used to be `[status, router, fetchPaymentSettings, fetchPaymentStats]`
+   * and simply called the two fetches. Every one of those dependencies has an
+   * identity that can change without anything meaningful happening:
+   *
+   *   - `fetchPaymentSettings` / `fetchPaymentStats` are `useCallback(..., [session])`,
+   *     so they are rebuilt whenever the session object is,
+   *   - `router` is a context value, not a primitive,
+   *
+   * and the effect body called `setRazorpaySettings(data.razorpay)` with the freshly
+   * fetched rows. So a re-run did not just refetch — it OVERWROTE whatever the user
+   * had typed. That is why the form appeared to reload mid-edit: one keystroke, one
+   * re-render, one new dependency identity, one clobbering refetch.
+   *
+   * The ref gate makes the load independent of all of that: the effect may run again,
+   * but it returns immediately unless the access token actually changed. It also keeps
+   * the exhaustive-deps list intact instead of hiding the problem by dropping deps.
+   */
+  const loadedTokenRef = useRef<string | null>(null)
+  const redirectedRef = useRef(false)
+
   useEffect(() => {
     if (status === 'unauthenticated') {
+      // Guarded: an unauthenticated status that persists would otherwise push a new
+      // navigation on every render, which looks like the page reloading in a loop.
+      if (redirectedRef.current) return
+      redirectedRef.current = true
       router.push('/admin/login')
       return
     }
-    if (status === 'authenticated') {
-      fetchPaymentSettings()
-      fetchPaymentStats()
-    }
-  }, [status, router, fetchPaymentSettings, fetchPaymentStats])
+
+    if (status !== 'authenticated') return
+
+    // Keyed on the access token: a genuine re-login loads again, an identity blip does not.
+    const token = (session as any)?.user?.accessToken ?? 'no-token'
+    if (loadedTokenRef.current === token) return
+    loadedTokenRef.current = token
+
+    fetchPaymentSettings()
+    fetchPaymentStats()
+  }, [status, session, router, fetchPaymentSettings, fetchPaymentStats])
 
   const handleSaveRazorpay = async () => {
     setIsSaving(true)
@@ -323,7 +378,15 @@ export default function PaymentSettingsPage() {
       const response = await axios.put(`${BASE_URL}/api/v1/admin/settings/payments/payout`, payoutSettings, {
         headers: { Authorization: `Bearer ${session?.user?.accessToken}` }
       })
-      if (response.data.success) toast.success('Payout settings saved successfully')
+      if (response.data.success) {
+        // Adopt the server's masked copy. The keySecret reads back as '***', so the plaintext
+        // secret leaves the DOM the moment it is stored instead of sitting in the input until
+        // the next page load — and saving again now means "keep it", not "re-encrypt this".
+        if (response.data.data) {
+          setPayoutSettings((prev) => ({ ...prev, ...response.data.data }))
+        }
+        toast.success('Payout settings saved successfully')
+      }
     } catch (error: any) {
       console.error('Error saving payout settings:', error)
       toast.error(error.response?.data?.message || 'Failed to save settings')
@@ -354,7 +417,8 @@ export default function PaymentSettingsPage() {
     setTimeout(() => setCopiedKey(null), 2000)
   }
 
-  if (status === 'loading' || isLoading) {
+  // A background refetch must never blank the form. Only the very first load does.
+  if (status === 'loading' || (isLoading && !initialLoadDone)) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3">
         <div className="relative">
@@ -978,6 +1042,208 @@ export default function PaymentSettingsPage() {
                     onCheckedChange={(checked) => setPayoutSettings({ ...payoutSettings, autoPayout: checked })}
                     className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-emerald-600 data-[state=checked]:to-teal-600"
                   />
+                </div>
+              </div>
+
+              <Separator />
+
+              {/*
+                Payout gateway (RazorpayX).
+
+                Every field here maps 1:1 onto `payment.payout` in SystemSettings, which is
+                what settlement.service reads via getPayoutConfig() / hasPayoutCredentials():
+
+                  razorpayPayoutEnabled -> master gate; false = manual transfer only
+                  razorpayAccount       -> RazorpayX source account payouts debit from
+                  keyId / keySecret     -> RazorpayX credentials (keySecret encrypted at rest)
+                  testMode              -> defaults on; the real environment comes from the
+                                           key prefix, so a live key still means live
+
+                Nothing is armed by default: the toggle is off and test mode is on, so this
+                section cannot silently start moving money.
+              */}
+              <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50/70 to-orange-50/40 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 shadow-sm">
+                      <Zap className="h-4 w-4 text-white" />
+                    </div>
+                    <div>
+                      <Label className="mb-0 text-slate-900">RazorpayX Payout Gateway</Label>
+                      <p className="mt-0.5 text-xs text-slate-600">
+                        Send vendor payouts automatically instead of transferring manually.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      className={cn(
+                        'border-0',
+                        payoutSettings.testMode
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+                      )}
+                    >
+                      {payoutSettings.testMode ? 'Test Mode' : 'Live Mode'}
+                    </Badge>
+                    <Switch
+                      checked={payoutSettings.razorpayPayoutEnabled}
+                      onCheckedChange={(checked) =>
+                        setPayoutSettings({ ...payoutSettings, razorpayPayoutEnabled: checked })
+                      }
+                      className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-amber-600 data-[state=checked]:to-orange-600"
+                    />
+                  </div>
+                </div>
+
+                {payoutSettings.testMode && (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
+                    <HelpCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
+                    <p className="text-xs text-blue-800">
+                      Test mode runs the full Contact → Fund Account → Payout chain against the
+                      sandbox, so vendor dashboards and payout records fill up with real response
+                      data. No real money moves.
+                      <span className="font-medium">
+                        {' '}
+                        The environment is decided by the key prefix, not this switch — a key
+                        starting with <code className="rounded bg-blue-100 px-1">rzp_live_</code> will
+                        still hit live.
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label htmlFor="payoutKeyId">
+                      RazorpayX Key ID <span className="text-slate-400">(optional)</span>
+                    </Label>
+                    <div className="relative mt-1.5">
+                      <Input
+                        id="payoutKeyId"
+                        value={payoutSettings.keyId}
+                        onChange={(e) => setPayoutSettings({ ...payoutSettings, keyId: e.target.value })}
+                        placeholder="rzp_test_xxxxxxxxxxxxxxxx"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(payoutSettings.keyId, 'payoutKeyId')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-amber-600"
+                      >
+                        {copiedKey === 'payoutKeyId' ? (
+                          <Check className="h-4 w-4 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      RazorpayX is a separate product from the payment gateway, so it needs its own key.
+                      Falls back to <code className="rounded bg-slate-100 px-1">RAZORPAYX_KEY_ID</code> when left blank.
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="payoutKeySecret">
+                      RazorpayX Key Secret <span className="text-slate-400">(optional)</span>
+                    </Label>
+                    <div className="relative mt-1.5">
+                      <Input
+                        id="payoutKeySecret"
+                        type={showPayoutKeySecret ? 'text' : 'password'}
+                        value={payoutSettings.keySecret}
+                        onChange={(e) => setPayoutSettings({ ...payoutSettings, keySecret: e.target.value })}
+                        placeholder="••••••••••••••••••••••••"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPayoutKeySecret(!showPayoutKeySecret)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-amber-600"
+                      >
+                        {showPayoutKeySecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Encrypted before storage.{' '}
+                      <span className="font-medium">Shows as *** once saved — leaving it as *** keeps the stored secret.</span>
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="razorpayAccount">Payout Source Account Number</Label>
+                    <div className="relative mt-1.5">
+                      <Input
+                        id="razorpayAccount"
+                        value={payoutSettings.razorpayAccount}
+                        onChange={(e) =>
+                          setPayoutSettings({ ...payoutSettings, razorpayAccount: e.target.value })
+                        }
+                        placeholder="23232300xxxxxx"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(payoutSettings.razorpayAccount, 'razorpayAccount')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-amber-600"
+                      >
+                        {copiedKey === 'razorpayAccount' ? (
+                          <Check className="h-4 w-4 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      The RazorpayX account payouts are debited from. Required before a gateway payout can run.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3.5">
+                    <div>
+                      <Label className="mb-0">Payout Test Mode</Label>
+                      <p className="text-xs text-slate-500">Simulate vendor payouts without moving real money</p>
+                    </div>
+                    <Switch
+                      checked={payoutSettings.testMode}
+                      onCheckedChange={(checked) =>
+                        setPayoutSettings({ ...payoutSettings, testMode: checked })
+                      }
+                      className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-blue-600 data-[state=checked]:to-indigo-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 border-t border-amber-200 pt-3">
+                  <Label className="text-xs text-slate-600">Payout Webhook URL</Label>
+                  <div className="relative mt-1.5">
+                    <Input
+                      readOnly
+                      value={`${BASE_URL}/api/v1/webhooks/razorpay`}
+                      className="bg-white pr-10 font-mono text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyToClipboard(`${BASE_URL}/api/v1/webhooks/razorpay`, 'payoutWebhook')
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-amber-600"
+                    >
+                      {copiedKey === 'payoutWebhook' ? (
+                        <Check className="h-4 w-4 text-emerald-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Add this in the RazorpayX dashboard to receive <code className="rounded bg-slate-100 px-1">payout.processed</code>,{' '}
+                    <code className="rounded bg-slate-100 px-1">payout.failed</code> and{' '}
+                    <code className="rounded bg-slate-100 px-1">payout.reversed</code>. Signature is
+                    verified with the <span className="font-medium">Razorpay Webhook Secret</span> from the
+                    Razorpay tab above — payment and payout events share this one endpoint.
+                  </p>
                 </div>
               </div>
 

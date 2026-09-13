@@ -227,12 +227,31 @@ export const authOptions: NextAuthOptions = {
 
           throw new Error("Authentication failed")
         } catch (error: any) {
-          if (error.response?.status === 401) {
+          const status = error.response?.status
+          const payload = error.response?.data
+
+          // The backend body is sometimes JSON and sometimes a bare string (the
+          // express-rate-limit handler sends `options.message` directly), so try
+          // both shapes.
+          const backendMessage =
+            typeof payload === "string" ? payload.trim() : payload?.message
+
+          // Preserve the real reason. Squashing every 401 into
+          // "Invalid credentials" hid account locks and rate limits behind a
+          // wrong message, so the user kept retrying a locked account and never
+          // learned why they were blocked.
+          // next-auth forwards a thrown Error's message to the client verbatim
+          // (core/routes/callback.js: `redirect: ${url}/error?error=encodeURIComponent(error.message)`).
+          if (backendMessage) {
+            throw new Error(backendMessage)
+          }
+
+          if (status === 401) {
             throw new Error("Invalid credentials")
           }
 
-          if (error.response?.data?.message) {
-            throw new Error(error.response.data.message)
+          if (status === 429) {
+            throw new Error("Too many attempts. Please wait a few minutes and try again.")
           }
 
           throw new Error("Login failed")
@@ -277,6 +296,19 @@ export const authOptions: NextAuthOptions = {
     },
 
     async session({ session, token }) {
+      // A failed refresh means the backend credentials are already dead. Do NOT
+      // keep advertising the account as signed in: the header was showing the
+      // vendor's name and dashboard button while every API call had been
+      // returning 401 for a long time.
+      if (token.error === "RefreshAccessTokenError") {
+        session.user = undefined as any
+
+        ;(session as any).error = token.error
+        ;(session as any).accessTokenExpires = token.accessTokenExpires
+
+        return session
+      }
+
       session.user = {
         id: token.id as string,
         email: token.email as string,
@@ -317,7 +349,11 @@ export const authOptions: NextAuthOptions = {
 
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60,
+    // Was 30 days while the backend access token lives 15 minutes and the
+    // refresh token 7 days. That mismatch is exactly why the UI could keep
+    // showing a signed-in vendor long after every API call started failing.
+    // 7 days now matches JWT_REFRESH_EXPIRES_IN.
+    maxAge: 7 * 24 * 60 * 60,
     updateAge: 24 * 60 * 60,
   },
 
@@ -325,18 +361,14 @@ export const authOptions: NextAuthOptions = {
 
   debug: process.env.NODE_ENV === "development",
 
-  cookies: {
-    sessionToken: {
-      name: `next-auth.session-token`,
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 30 * 24 * 60 * 60,
-      },
-    },
-  },
+  // NOTE: the hardcoded `cookies.sessionToken.name` override that used to live
+  // here has been removed on purpose. next-auth derives the cookie name from the
+  // request protocol (`__Secure-next-auth.session-token` on HTTPS,
+  // `next-auth.session-token` on HTTP), and the Edge middleware in
+  // middleware.ts resolves the session through that same default naming.
+  // Forcing the plain-HTTP name here meant that in production (HTTPS) the
+  // middleware looked for the `__Secure-` cookie, never found it, and bounced
+  // every protected route to the login page.
 }
 
 const handler = NextAuth(authOptions)

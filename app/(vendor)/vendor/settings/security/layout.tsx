@@ -3,9 +3,8 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
 import {
-  Shield, Lock, Key, Fingerprint, Bell, Eye,
+  Shield, Key, Bell, Eye,
   Smartphone, AlertTriangle, CheckCircle, ChevronRight
 } from 'lucide-react'
 

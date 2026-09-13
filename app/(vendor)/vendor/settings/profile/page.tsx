@@ -49,6 +49,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
+import { useQueryClient } from '@tanstack/react-query'
+import { vendorProfileQueryOptions } from '@/lib/api/vendorProfile'
+import { vendorQueryKeys } from '@/lib/api/queryKeys'
 import axios from 'axios'
 import { format } from 'date-fns'
 
@@ -153,6 +156,7 @@ function FieldError({ message }: { message?: string }) {
 
 export default function VendorProfilePage() {
   const { data: session, status } = useSession()
+  const queryClient = useQueryClient()
   const [profile, setProfile] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isEditing, setIsEditing] = useState(false)
@@ -181,14 +185,13 @@ export default function VendorProfilePage() {
   })
 
   // ── FIX: Only fetch once session is authenticated and token is available ──────
-  const fetchProfile = useCallback(async (token: string) => {
+  const fetchProfile = useCallback(async () => {
     try {
       setIsLoading(true)
-      const response = await axios.get(`${BASE_URL}/api/v1/vendor/profile/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.data.success) {
-        const data = response.data.data.profile
+      // Served from the shared vendor-profile cache when fresh, so opening this
+      // tab no longer re-downloads the whole vendor document.
+      const data = await queryClient.fetchQuery(vendorProfileQueryOptions)
+      if (data) {
         setProfile(data)
         setValue('businessName', data.business?.name || '')
         setValue('businessDescription', data.business?.description || '')
@@ -205,7 +208,7 @@ export default function VendorProfilePage() {
     } finally {
       setIsLoading(false)
     }
-  }, [setValue])
+  }, [setValue, queryClient])
 
   useEffect(() => {
     // Wait until session is fully loaded and token exists
@@ -215,7 +218,7 @@ export default function VendorProfilePage() {
     // Prevent calling the API more than once per mount
     if (hasFetched.current) return
     hasFetched.current = true
-    fetchProfile(token)
+    fetchProfile()
   }, [status, session?.user?.accessToken, fetchProfile])
 
   const onSubmit = async (data: ProfileFormValues) => {
@@ -245,9 +248,13 @@ export default function VendorProfilePage() {
       if (response.data.success) {
         toast.success('Profile updated successfully')
         setIsEditing(false)
+        // Drop the cached profile FIRST, so the refresh below reads the saved
+        // values instead of the 60s-old cached copy. Awaiting also repaints the
+        // sidebar/header immediately.
+        await queryClient.invalidateQueries({ queryKey: vendorQueryKeys.profile })
         // Re-allow fetch so we can refresh after save
         hasFetched.current = false
-        fetchProfile(session!.user!.accessToken as string)
+        fetchProfile()
       }
     } catch (error: any) {
       console.error('Error updating profile:', error)

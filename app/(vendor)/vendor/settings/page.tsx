@@ -52,7 +52,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
-import axios from 'axios'
+import { useQueryClient } from '@tanstack/react-query'
+import { vendorProfileQueryOptions } from '@/lib/api/vendorProfile'
 import { ProfileTab } from '@/components/vendor/settings/ProfileTab'
 import { BusinessHoursTab } from '@/components/vendor/settings/BusinessHoursTab'
 import { NotificationsTab } from '@/components/vendor/settings/NotificationTab'
@@ -66,11 +67,10 @@ import { BankDetailsTab } from '@/components/vendor/settings/BankDetailsTab'
 // import { SecurityTab } from './components/SecurityTab'
 // import { BankDetailsTab } from './components/BankDetailsTab'
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
-
 export default function VendorSettingsPage() {
-  const { data: session, status } = useSession()
+  const { status } = useSession()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState('profile')
   const [profile, setProfile] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -89,13 +89,11 @@ export default function VendorSettingsPage() {
   const fetchVendorProfile = async () => {
     setIsLoading(true)
     try {
-      const response = await axios.get(`${BASE_URL}/api/v1/vendor/profile/me`, {
-        headers: {
-          Authorization: `Bearer ${session?.user?.accessToken}`
-        }
-      })
-      if (response.data.success) {
-        setProfile(response.data.data.profile)
+      // Served from the shared vendor-profile cache when fresh, so switching
+      // between vendor pages no longer re-downloads the whole document.
+      const profile = await queryClient.fetchQuery(vendorProfileQueryOptions)
+      if (profile) {
+        setProfile(profile)
       }
     } catch (error) {
       console.error('Error fetching vendor profile:', error)

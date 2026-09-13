@@ -41,6 +41,24 @@ export interface PayoutSettings {
   autoPayout: boolean
   payoutDay?: number
   holdPeriod: number // days
+  /** Master switch for gateway payouts. While false every payout falls back to manual transfer. */
+  razorpayPayoutEnabled: boolean
+  /** RazorpayX source account number that payouts are debited from. */
+  razorpayAccount: string
+  /** RazorpayX key id. Read back in clear so the operator can see which key is live. */
+  keyId: string
+  /**
+   * RazorpayX key secret. The API never returns the real value — it reads back as
+   * '***' once set, and submitting '***' means "keep the stored secret".
+   */
+  keySecret: string
+  /**
+   * Operator intent for the payout environment. Defaults to true. The gateway
+   * environment is decided by the key prefix, not this flag, so a live key here
+   * still means live — the backend re-derives it and refuses live payouts against
+   * test-derived earnings.
+   */
+  testMode: boolean
 }
 
 export interface RefundSettings {
