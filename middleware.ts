@@ -5,6 +5,10 @@ import { withAuth } from 'next-auth/middleware'
 import { NextResponse } from 'next/server'
 import type { NextRequestWithAuth } from 'next-auth/middleware'
 import type { JWT } from 'next-auth/jwt'
+import {
+  SESSION_COOKIE_NAME,
+  USE_SECURE_SESSION_COOKIE,
+} from '@/lib/auth/sessionCookie'
 
 // The Edge middleware MUST sign/verify sessions with exactly the same secret as
 // the NextAuth route handler (app/api/auth/[...nextauth]/route.ts uses
@@ -531,6 +535,17 @@ export default withAuth(
     pages: {
       signIn: '/login',
       error: '/login',
+    },
+
+    // Read the session cookie by the SAME name the NextAuth route handler
+    // writes it with. next-auth resolves the middleware's name from
+    // `process.env.NEXTAUTH_URL` and the handler's from the request origin, so
+    // leaving both to their defaults lets a stale NEXTAUTH_URL make the
+    // middleware look for a cookie that is never written — every protected
+    // route then bounces to the login page while the session is perfectly
+    // valid. See lib/auth/sessionCookie.ts.
+    cookies: {
+      sessionToken: { name: SESSION_COOKIE_NAME },
     },
 
     secret: nextAuthSecret,

@@ -3,6 +3,7 @@
 import NextAuth, { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import axios from "axios"
+import { USE_SECURE_SESSION_COOKIE } from "@/lib/auth/sessionCookie"
 
 type Role = "user" | "vendor" | "admin" | "super-admin" | "delivery"
 
@@ -359,16 +360,26 @@ export const authOptions: NextAuthOptions = {
 
   secret: process.env.NEXTAUTH_SECRET,
 
+  // Pin the cookie name from the SAME constant the Edge middleware reads.
+  // The library default here is `url.base.startsWith("https://")` — the actual
+  // request origin — while the middleware's default is
+  // `NEXTAUTH_URL?.startsWith("https://") ?? !!VERCEL`. Two different sources,
+  // which is exactly how a stale NEXTAUTH_URL silently breaks every protected
+  // route. Do NOT remove this and fall back to the library default.
+  // See lib/auth/sessionCookie.ts.
+  useSecureCookies: USE_SECURE_SESSION_COOKIE,
+
   debug: process.env.NODE_ENV === "development",
 
-  // NOTE: the hardcoded `cookies.sessionToken.name` override that used to live
-  // here has been removed on purpose. next-auth derives the cookie name from the
-  // request protocol (`__Secure-next-auth.session-token` on HTTPS,
-  // `next-auth.session-token` on HTTP), and the Edge middleware in
-  // middleware.ts resolves the session through that same default naming.
-  // Forcing the plain-HTTP name here meant that in production (HTTPS) the
-  // middleware looked for the `__Secure-` cookie, never found it, and bounced
-  // every protected route to the login page.
+  // NOTE: the `cookies.sessionToken.name` override that used to live here was
+  // removed on purpose — but the reason recorded at the time was wrong. It
+  // claimed "the Edge middleware in middleware.ts resolves the session through
+  // that same default naming". It does not: the middleware reads NEXTAUTH_URL,
+  // this handler reads the request origin. So removing the override did not
+  // remove the mismatch, it only moved the failure to the other direction and
+  // made it depend on an environment variable. The two sides are now kept in
+  // agreement explicitly: `useSecureCookies` here, and the `cookies` option
+  // passed to withAuth in middleware.ts.
 }
 
 const handler = NextAuth(authOptions)

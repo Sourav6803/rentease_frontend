@@ -22,7 +22,16 @@ export interface RegisterPayload {
   businessName?: string
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+// NOTE: the rest of the codebase (and .env*) standardise on
+// NEXT_PUBLIC_API_BASE_URL. This file used to read only NEXT_PUBLIC_API_URL,
+// which is NOT set in the Vercel project (only NEXT_PUBLIC_API_BASE_URL is), so
+// it fell through to localhost — meaning register / forgot-password /
+// reset-password posted to http://localhost:5000 from the deployed site. Same
+// mistake `lib/api/notifications.ts` already documents and guards against.
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://localhost:5000'
 
 async function postJson<TResponse, TPayload>(
   path: string,
