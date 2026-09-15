@@ -22,38 +22,50 @@ async function getAuthHeaders() {
   }
 }
 
+/**
+ * Matches what GET /api/v1/vendor/invoices actually returns.
+ *
+ * The page previously declared a different shape — flat `subtotal` / `tax` / `total`
+ * and a line-item `items[]` array — none of which the API sends. There IS no line-item
+ * model for an invoice either: a rental is a single product, so the honest breakdown
+ * is the rental's charge fields, which is what `amounts` holds.
+ */
 interface Invoice {
   _id: string
   invoiceNumber: string
   rentalNumber: string
-  amount: number
+  rentalId?: string
+  type: string
   status: 'paid' | 'pending' | 'overdue'
-  type: 'rental' | 'payout'
+  rentalStatus?: string
   customer: {
     name: string
-    email: string
-    phone?: string
+    email?: string | null
+    phone?: string | null
   }
   product: {
     name: string
-    sku: string
+    sku?: string | null
   }
   rentalPeriod: {
-    start: string
-    end: string
+    start?: string | null
+    end?: string | null
   }
-  items: Array<{
-    description: string
-    quantity: number
-    unitPrice: number
+  amounts: {
+    subtotal: number
+    discount: number
+    securityDeposit: number
+    deliveryCharges: number
     total: number
-  }>
-  subtotal: number
-  tax: number
-  total: number
+    paid: number
+    due: number
+  }
+  /** Flattened equivalents of amounts.total / paid / due. */
+  amount: number
+  paidAmount: number
+  dueAmount: number
   createdAt: string
-  dueDate?: string
-  paidAt?: string
+  dueDate?: string | null
 }
 
 const statusConfig = {
@@ -62,12 +74,21 @@ const statusConfig = {
   overdue: { label: 'Overdue', color: 'text-red-700', bg: 'bg-red-50 border-red-200' },
 }
 
+/**
+ * Never returns undefined. A direct `statusConfig[status]` lookup threw
+ * "Cannot read properties of undefined" the moment the API returned a status this
+ * map does not know about, blanking the whole list.
+ */
+function getInvoiceStatusConfig(status: string) {
+  return statusConfig[status as keyof typeof statusConfig] ?? statusConfig.pending
+}
+
 function InvoiceCard({ invoice, onDownload, onView }: { 
   invoice: Invoice; 
   onDownload: (invoice: Invoice) => void;
   onView: (invoice: Invoice) => void;
 }) {
-  const config = statusConfig[invoice.status]
+  const config = getInvoiceStatusConfig(invoice.status)
   
   return (
     <motion.div
@@ -97,11 +118,13 @@ function InvoiceCard({ invoice, onDownload, onView }: {
           </div>
         </div>
         <div className="text-right">
-          <p className="text-xl font-bold text-slate-900">₹{invoice.total.toLocaleString()}</p>
-          {invoice.status === 'paid' && invoice.paidAt && (
-            <p className="text-xs text-green-600 mt-1">
-              Paid {format(new Date(invoice.paidAt), 'dd MMM yyyy')}
+          <p className="text-xl font-bold text-slate-900">₹{(invoice.amount ?? 0).toLocaleString()}</p>
+          {invoice.dueAmount > 0 ? (
+            <p className="text-xs text-amber-600 mt-1">
+              ₹{invoice.dueAmount.toLocaleString()} due
             </p>
+          ) : (
+            <p className="text-xs text-green-600 mt-1">Fully paid</p>
           )}
           <div className="flex gap-2 mt-3">
             <button
@@ -171,14 +194,19 @@ function InvoiceDetailsModal({ invoice, onClose, onDownload }: {
                   }`}>
                     Invoice {invoice.status === 'paid' ? 'Paid' : invoice.status === 'pending' ? 'Pending Payment' : 'Overdue'}
                   </p>
-                  {invoice.dueDate && invoice.status !== 'paid' && (
+                  {/* No `paidAt` exists on a rental invoice, so the paid figure is
+                      shown instead of a timestamp that was never sent. */}
+                  {invoice.rentalPeriod?.end && (
                     <p className="text-xs mt-0.5 text-slate-600">
-                      Due by {format(new Date(invoice.dueDate), 'dd MMM yyyy')}
+                      Rental ends {format(new Date(invoice.rentalPeriod.end), 'dd MMM yyyy')}
                     </p>
                   )}
-                  {invoice.paidAt && (
+                  {invoice.paidAmount > 0 && (
                     <p className="text-xs mt-0.5 text-green-700">
-                      Paid on {format(new Date(invoice.paidAt), 'dd MMM yyyy')}
+                      ₹{invoice.paidAmount.toLocaleString()} received
+                      {invoice.dueAmount > 0
+                        ? `, ₹${invoice.dueAmount.toLocaleString()} outstanding`
+                        : ''}
                     </p>
                   )}
                 </div>
@@ -205,7 +233,12 @@ function InvoiceDetailsModal({ invoice, onClose, onDownload }: {
                 <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Rental Details</h3>
                 <p className="text-sm text-slate-600">Rental #{invoice.rentalNumber}</p>
                 <p className="text-sm text-slate-600 mt-1">
-                  {format(new Date(invoice.rentalPeriod.start), 'dd MMM yyyy')} - {format(new Date(invoice.rentalPeriod.end), 'dd MMM yyyy')}
+                  {invoice.rentalPeriod?.start && invoice.rentalPeriod?.end
+                    ? `${format(new Date(invoice.rentalPeriod.start), 'dd MMM yyyy')} - ${format(
+                        new Date(invoice.rentalPeriod.end),
+                        'dd MMM yyyy',
+                      )}`
+                    : 'Dates unavailable'}
                 </p>
               </div>
             </div>
@@ -217,34 +250,68 @@ function InvoiceDetailsModal({ invoice, onClose, onDownload }: {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">Description</th>
-                      <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500">Qty</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500">Unit Price</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500">Total</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">Item</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500">Amount</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {invoice.items.map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="px-4 py-3 text-slate-700">{item.description}</td>
-                        <td className="px-4 py-3 text-center text-slate-600">{item.quantity}</td>
-                        <td className="px-4 py-3 text-right text-slate-600">₹{item.unitPrice.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-medium">₹{item.total.toLocaleString()}</td>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-700">
+                        {invoice.product.name}
+                        {invoice.rentalPeriod?.start && invoice.rentalPeriod?.end && (
+                          <span className="block text-xs text-slate-400 mt-0.5">
+                            {format(new Date(invoice.rentalPeriod.start), 'dd MMM yyyy')} -{' '}
+                            {format(new Date(invoice.rentalPeriod.end), 'dd MMM yyyy')}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium">
+                        ₹{invoice.amounts.subtotal.toLocaleString()}
+                      </td>
+                    </tr>
+                    {invoice.amounts.deliveryCharges > 0 && (
+                      <tr>
+                        <td className="px-4 py-3 text-slate-700">Delivery charges</td>
+                        <td className="px-4 py-3 text-right">
+                          ₹{invoice.amounts.deliveryCharges.toLocaleString()}
+                        </td>
                       </tr>
-                    ))}
+                    )}
+                    {invoice.amounts.securityDeposit > 0 && (
+                      <tr>
+                        <td className="px-4 py-3 text-slate-700">Security deposit</td>
+                        <td className="px-4 py-3 text-right">
+                          ₹{invoice.amounts.securityDeposit.toLocaleString()}
+                        </td>
+                      </tr>
+                    )}
+                    {invoice.amounts.discount > 0 && (
+                      <tr>
+                        <td className="px-4 py-3 text-slate-700">Discount</td>
+                        <td className="px-4 py-3 text-right text-green-700">
+                          -₹{invoice.amounts.discount.toLocaleString()}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                   <tfoot className="bg-slate-50 border-t border-slate-200">
                     <tr>
-                      <td colSpan={3} className="px-4 py-3 text-right font-medium">Subtotal</td>
-                      <td className="px-4 py-3 text-right">₹{invoice.subtotal.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-800">Total</td>
+                      <td className="px-4 py-3 text-right font-bold text-[#2874f0]">
+                        ₹{invoice.amounts.total.toLocaleString()}
+                      </td>
                     </tr>
                     <tr>
-                      <td colSpan={3} className="px-4 py-3 text-right font-medium">Tax (18% GST)</td>
-                      <td className="px-4 py-3 text-right">₹{invoice.tax.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right font-medium">Paid</td>
+                      <td className="px-4 py-3 text-right text-green-700">
+                        ₹{invoice.amounts.paid.toLocaleString()}
+                      </td>
                     </tr>
-                    <tr className="border-t border-slate-200">
-                      <td colSpan={3} className="px-4 py-3 text-right font-bold text-slate-800">Total</td>
-                      <td className="px-4 py-3 text-right font-bold text-[#2874f0]">₹{invoice.total.toLocaleString()}</td>
+                    <tr>
+                      <td className="px-4 py-3 text-right font-medium">Due</td>
+                      <td className="px-4 py-3 text-right text-amber-700">
+                        ₹{invoice.amounts.due.toLocaleString()}
+                      </td>
                     </tr>
                   </tfoot>
                 </table>
@@ -308,8 +375,24 @@ export default function InvoicesPage() {
       if (searchTerm) params.set('search', searchTerm)
       
       const res = await fetch(`${BASE_URL}/api/v1/vendor/invoices?${params.toString()}`, { headers })
+
+      // A non-JSON error body (404/500 from a proxy, a maintenance page) used to hit
+      // res.json(), throw, and surface only a generic "Failed to load invoices" —
+      // with the list then rendering as though the vendor simply had no invoices.
+      // Handle it explicitly so a real outage never looks like an empty account.
+      if (!res.ok) {
+        setInvoices([])
+        setTotalPages(1)
+        setTotalInvoices(0)
+        setTotalAmount(0)
+        toast.error(
+          `Could not load invoices (server returned ${res.status}). This is not an empty list.`,
+        )
+        return
+      }
+
       const data = await res.json()
-      
+
       if (data.success) {
         setInvoices(data.data.invoices || [])
         setTotalPages(data.data.pagination?.pages || 1)

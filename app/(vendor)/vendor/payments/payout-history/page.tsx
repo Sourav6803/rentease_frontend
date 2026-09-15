@@ -8,7 +8,7 @@ import {
   History, Download, ChevronLeft, ChevronRight, RefreshCw,
   CheckCircle, Clock, XCircle, Calendar, DollarSign,
   TrendingUp, Wallet, FileText, Eye, Search, Filter,
-  AlertCircle
+  AlertCircle, Banknote
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import { format } from 'date-fns'
@@ -23,35 +23,78 @@ async function getAuthHeaders() {
   }
 }
 
+/**
+ * Mirrors the Payout model (backend/src/models/Payout.model.js).
+ *
+ * This page previously described a completely different shape — `status:
+ * 'completed'`, `period.start/end`, `transactions`, `bankDetails` — none of which
+ * the API returns. The API sends `paid`, `periodStart/periodEnd`, `entryIds` and
+ * `bankAccountSnapshot`, so rows were rendered from `undefined` and the first
+ * property access ("Cannot read properties of undefined") blanked the page.
+ */
+type PayoutStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'cancelled'
+
 interface Payout {
   _id: string
   payoutNumber: string
   amount: number
-  status: 'pending' | 'processing' | 'completed' | 'failed'
+  currency?: string
+  status: PayoutStatus
   method: string
-  period: { start: string; end: string }
-  transactions: Array<{ paymentId: string; amount: number }>
-  processedAt?: string
-  completedAt?: string
-  failureReason?: string
-  bankDetails: {
-    accountNumber: string
-    bankName: string
-    ifscCode: string
+  periodStart?: string
+  periodEnd?: string
+  entryIds?: string[]
+  deductions?: {
+    grossAmount?: number
+    commission?: number
+    platformFee?: number
+    tax?: number
+    processingFee?: number
+    netAmount?: number
   }
+  bankAccountSnapshot?: {
+    accountHolderName?: string
+    accountNumberMasked?: string
+    ifscCode?: string
+    bankName?: string
+    upiId?: string
+  }
+  gateway?: {
+    payoutId?: string
+    utr?: string
+    failureReason?: string
+    attempts?: number
+    mode?: string
+  }
+  requiresManualTransfer?: boolean
+  receiptNumber?: string
+  processedAt?: string
   createdAt: string
 }
 
-const statusConfig = {
+const statusConfig: Record<
+  PayoutStatus,
+  { label: string; color: string; bg: string; icon: typeof Clock }
+> = {
   pending: { label: 'Pending', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200', icon: Clock },
   processing: { label: 'Processing', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200', icon: RefreshCw },
-  completed: { label: 'Completed', color: 'text-green-700', bg: 'bg-green-50 border-green-200', icon: CheckCircle },
+  paid: { label: 'Paid', color: 'text-green-700', bg: 'bg-green-50 border-green-200', icon: CheckCircle },
   failed: { label: 'Failed', color: 'text-red-700', bg: 'bg-red-50 border-red-200', icon: XCircle },
+  cancelled: { label: 'Cancelled', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200', icon: XCircle },
+}
+
+/**
+ * Never returns undefined. A status the frontend does not know about (a future
+ * one added on the backend) must degrade to a neutral badge, not crash the page.
+ */
+function getStatusConfig(status: string) {
+  return statusConfig[status as PayoutStatus] ?? statusConfig.pending
 }
 
 function PayoutCard({ payout, onViewDetails }: { payout: Payout; onViewDetails: (payout: Payout) => void }) {
-  const config = statusConfig[payout.status]
+  const config = getStatusConfig(payout.status)
   const Icon = config.icon
+  const entryCount = payout.entryIds?.length ?? 0
   
   return (
     <motion.div
@@ -72,7 +115,12 @@ function PayoutCard({ payout, onViewDetails }: { payout: Payout; onViewDetails: 
           <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
             <span className="flex items-center gap-1">
               <Calendar className="h-3 w-3" />
-              {format(new Date(payout.period.start), 'dd MMM')} - {format(new Date(payout.period.end), 'dd MMM yyyy')}
+              {payout.periodStart && payout.periodEnd
+                ? `${format(new Date(payout.periodStart), 'dd MMM')} - ${format(
+                    new Date(payout.periodEnd),
+                    'dd MMM yyyy',
+                  )}`
+                : '—'}
             </span>
             <span className="flex items-center gap-1">
               <Wallet className="h-3 w-3" />
@@ -80,13 +128,14 @@ function PayoutCard({ payout, onViewDetails }: { payout: Payout; onViewDetails: 
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-2">
-            {payout.transactions.length} transaction{payout.transactions.length !== 1 ? 's' : ''} included
+            {entryCount} transaction{entryCount !== 1 ? 's' : ''} included
           </p>
         </div>
         <div className="text-right">
-          {payout.completedAt && (
+          {payout.processedAt && (
             <p className="text-xs text-green-600 mb-2">
-              Completed {format(new Date(payout.completedAt), 'dd MMM yyyy')}
+              {payout.status === 'paid' ? 'Paid' : 'Processed'}{' '}
+              {format(new Date(payout.processedAt), 'dd MMM yyyy')}
             </p>
           )}
           <button
@@ -103,8 +152,10 @@ function PayoutCard({ payout, onViewDetails }: { payout: Payout; onViewDetails: 
 }
 
 function PayoutDetailsModal({ payout, onClose }: { payout: Payout; onClose: () => void }) {
-  const config = statusConfig[payout.status]
+  const config = getStatusConfig(payout.status)
   const Icon = config.icon
+  const bank = payout.bankAccountSnapshot
+  const entryCount = payout.entryIds?.length ?? 0
   
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -113,16 +164,18 @@ function PayoutDetailsModal({ payout, onClose }: { payout: Payout; onClose: () =
         
         <div className="relative bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
           <div className={`sticky top-0 px-6 py-4 border-b ${
-            payout.status === 'completed' ? 'bg-green-50' :
+            payout.status === 'paid' ? 'bg-green-50' :
             payout.status === 'pending' ? 'bg-amber-50' :
-            payout.status === 'failed' ? 'bg-red-50' : 'bg-blue-50'
+            payout.status === 'failed' ? 'bg-red-50' :
+            payout.status === 'cancelled' ? 'bg-slate-50' : 'bg-blue-50'
           }`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                  payout.status === 'completed' ? 'bg-green-100' :
+                  payout.status === 'paid' ? 'bg-green-100' :
                   payout.status === 'pending' ? 'bg-amber-100' :
-                  payout.status === 'failed' ? 'bg-red-100' : 'bg-blue-100'
+                  payout.status === 'failed' ? 'bg-red-100' :
+                  payout.status === 'cancelled' ? 'bg-slate-100' : 'bg-blue-100'
                 }`}>
                   <Icon className={`h-6 w-6 ${config.color}`} />
                 </div>
@@ -168,25 +221,41 @@ function PayoutDetailsModal({ payout, onClose }: { payout: Payout; onClose: () =
                     </div>
                   </div>
                 )}
-                {payout.completedAt && (
+                {payout.processedAt && (
                   <div className="flex gap-3">
                     <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
                       <CheckCircle className="h-4 w-4 text-green-600" />
                     </div>
                     <div>
-                      <p className="font-medium text-slate-800">Completed</p>
-                      <p className="text-xs text-slate-500">{format(new Date(payout.completedAt), 'dd MMM yyyy, hh:mm a')}</p>
+                      <p className="font-medium text-slate-800">
+                        {payout.status === 'paid' ? 'Paid' : 'Processed'}
+                      </p>
+                      <p className="text-xs text-slate-500">{format(new Date(payout.processedAt), 'dd MMM yyyy, hh:mm a')}</p>
                     </div>
                   </div>
                 )}
-                {payout.failureReason && (
+                {payout.gateway?.utr && (
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                      <Banknote className="h-4 w-4 text-slate-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-slate-800">Bank Reference (UTR)</p>
+                      <p className="text-xs text-slate-500 font-mono">{payout.gateway.utr}</p>
+                    </div>
+                  </div>
+                )}
+                {/* Only surface a failure when the payout actually failed — a
+                    successful retry leaves the previous failureReason on the
+                    record, and showing it next to "Paid" reads as a contradiction. */}
+                {payout.status === 'failed' && payout.gateway?.failureReason && (
                   <div className="flex gap-3">
                     <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
                       <AlertCircle className="h-4 w-4 text-red-600" />
                     </div>
                     <div>
                       <p className="font-medium text-red-700">Failed</p>
-                      <p className="text-xs text-red-600">{payout.failureReason}</p>
+                      <p className="text-xs text-red-600">{payout.gateway.failureReason}</p>
                     </div>
                   </div>
                 )}
@@ -199,41 +268,102 @@ function PayoutDetailsModal({ payout, onClose }: { payout: Payout; onClose: () =
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Bank Name:</span>
-                  <span className="font-medium">{payout.bankDetails.bankName}</span>
+                  <span className="font-medium">{bank?.bankName || '-'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Account Number:</span>
-                  <span className="font-mono">XXXX{payout.bankDetails.accountNumber.slice(-4)}</span>
+                  {/* Already masked server-side in bankAccountSnapshot. */}
+                  <span className="font-mono">{bank?.accountNumberMasked || '-'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">IFSC Code:</span>
-                  <span className="font-mono">{payout.bankDetails.ifscCode}</span>
+                  <span className="font-mono">{bank?.ifscCode || '-'}</span>
                 </div>
+                {bank?.upiId && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">UPI ID:</span>
+                    <span className="font-mono">{bank.upiId}</span>
+                  </div>
+                )}
               </div>
             </div>
-            
-            {/* Transactions */}
-            <div className="bg-slate-50 rounded-xl p-4">
-              <h3 className="font-semibold text-slate-800 mb-3">Included Transactions</h3>
-              <div className="space-y-2">
-                {payout.transactions.map((tx, idx) => (
-                  <div key={idx} className="flex justify-between text-sm">
-                    <span className="text-slate-500 font-mono">{tx.paymentId}</span>
-                    <span className="font-medium">₹{tx.amount.toLocaleString()}</span>
+
+            {/* Deductions */}
+            {payout.deductions && (
+              <div className="bg-slate-50 rounded-xl p-4">
+                <h3 className="font-semibold text-slate-800 mb-3">Breakdown</h3>
+                <div className="space-y-2 text-sm">
+                  {([
+                    ['Gross Earnings', payout.deductions.grossAmount],
+                    ['Platform Commission', payout.deductions.commission],
+                    ['Platform Fee', payout.deductions.platformFee],
+                    ['Tax Deducted', payout.deductions.tax],
+                    ['Payout Processing Fee', payout.deductions.processingFee],
+                  ] as Array<[string, number | undefined]>).map(([label, value]) => (
+                    <div key={label} className="flex justify-between">
+                      <span className="text-slate-500">{label}</span>
+                      <span className="font-medium">
+                        ₹{Number(value ?? 0).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between border-t border-slate-200 pt-2">
+                    <span className="font-semibold text-slate-700">Net Amount Paid</span>
+                    <span className="font-bold text-slate-900">
+                      ₹{Number(payout.deductions.netAmount ?? payout.amount ?? 0).toLocaleString()}
+                    </span>
                   </div>
-                ))}
+                </div>
               </div>
+            )}
+
+            {/* Settled ledger entries. The payout document carries entry ids only,
+                not per-entry amounts, so no amount is shown per row. */}
+            <div className="bg-slate-50 rounded-xl p-4">
+              <h3 className="font-semibold text-slate-800 mb-3">
+                Settled Earnings ({entryCount})
+              </h3>
+              {entryCount === 0 ? (
+                <p className="text-sm text-slate-500">No ledger entries linked to this payout.</p>
+              ) : (
+                <div className="space-y-1">
+                  {(payout.entryIds ?? []).map((entryId) => (
+                    <p key={entryId} className="text-xs text-slate-500 font-mono truncate">
+                      {entryId}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           
           <div className="sticky bottom-0 border-t border-slate-200 px-6 py-4 bg-white">
+            {/* The only receipt route on the backend is
+                `GET /api/v1/admin/payouts/:id/receipt`, which is admin-only. This
+                button used to open `/api/v1/payouts/:id/receipt` — the wrong origin
+                (it resolved against the frontend host) AND a route that does not
+                exist — so it always 404'd. Disabled until a vendor-scoped endpoint
+                exists rather than pretending to work. */}
             <button
-              onClick={() => window.open(`/api/v1/payouts/${payout._id}/receipt`, '_blank')}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2874f0] text-white rounded-lg font-semibold hover:bg-[#1a5fd4] transition-colors"
+              type="button"
+              disabled
+              title="Receipt download requires a vendor-scoped API route, which does not exist yet."
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-200 text-slate-500 rounded-lg font-semibold cursor-not-allowed"
             >
               <Download className="h-4 w-4" />
-              Download Receipt
+              Receipt unavailable
             </button>
+            <p className="mt-2 text-center text-xs text-slate-500">
+              Receipt download is not wired up for vendors yet. Your payout number is{' '}
+              <span className="font-mono">{payout.payoutNumber}</span>
+              {payout.receiptNumber ? (
+                <>
+                  {' '}
+                  (receipt <span className="font-mono">{payout.receiptNumber}</span>)
+                </>
+              ) : null}
+              .
+            </p>
           </div>
         </div>
       </div>

@@ -29,7 +29,10 @@ interface PaymentStats {
   pendingPayout: number
   thisMonthRevenue: number
   lastMonthRevenue: number
-  growth: number
+  /** null when there is no previous month to compare against. */
+  growth: number | null
+  /** null when the account has no payments to rate. */
+  successRate: number | null
 }
 
 interface RecentPayment {
@@ -61,7 +64,8 @@ export default function PaymentsOverviewPage() {
     pendingPayout: 0,
     thisMonthRevenue: 0,
     lastMonthRevenue: 0,
-    growth: 0
+    growth: null,
+    successRate: null,
   })
   const [recentPayments, setRecentPayments] = useState<RecentPayment[]>([])
   const [monthlyTrends, setMonthlyTrends] = useState<MonthlyTrend[]>([])
@@ -92,10 +96,15 @@ export default function PaymentsOverviewPage() {
           totalRevenue: overview.totalAmount || 0,
           totalPayments: overview.totalCount || 0,
           averagePayment: overview.averageAmount || 0,
-          pendingPayout: 0,
-          thisMonthRevenue: 0,
-          lastMonthRevenue: 0,
-          growth: 12.5
+          // These four used to be hardcoded — the monthly figures and pending payouts
+          // to 0, and growth to a fabricated 12.5 — so the cards displayed numbers
+          // unrelated to the account. The API now returns real values.
+          pendingPayout: statsData.data.pendingPayout || 0,
+          thisMonthRevenue: statsData.data.thisMonthRevenue || 0,
+          lastMonthRevenue: statsData.data.lastMonthRevenue || 0,
+          growth: typeof statsData.data.growth === 'number' ? statsData.data.growth : null,
+          successRate:
+            typeof statsData.data.successRate === 'number' ? statsData.data.successRate : null,
         })
       }
       
@@ -155,7 +164,19 @@ export default function PaymentsOverviewPage() {
     }
   }
   
-  const statCards = [
+  // `trend` is only ever a real figure. It previously carried fabricated
+  // percentages ("+8%", "-5%", "+2%") and the Success Rate card a hardcoded
+  // "98.5%" — none of which came from the account's data.
+  const statCards: Array<{
+    title: string
+    value: string
+    subtitle: string
+    icon: typeof DollarSign
+    color: string
+    bg: string
+    trend?: string
+    trendUp?: boolean
+  }> = [
     {
       title: 'Total Revenue',
       value: `₹${(stats.totalRevenue / 1000).toFixed(1)}K`,
@@ -163,8 +184,12 @@ export default function PaymentsOverviewPage() {
       icon: DollarSign,
       color: '#2874f0',
       bg: '#ebf3fb',
-      trend: `+${stats.growth}%`,
-      trendUp: true
+      ...(stats.growth !== null
+        ? {
+            trend: `${stats.growth >= 0 ? '+' : ''}${stats.growth}%`,
+            trendUp: stats.growth >= 0,
+          }
+        : {}),
     },
     {
       title: 'Avg. Transaction',
@@ -173,8 +198,6 @@ export default function PaymentsOverviewPage() {
       icon: TrendingUp,
       color: '#21a056',
       bg: '#e8f5e9',
-      trend: '+8%',
-      trendUp: true
     },
     {
       title: 'Pending Payout',
@@ -183,19 +206,15 @@ export default function PaymentsOverviewPage() {
       icon: Wallet,
       color: '#fb641b',
       bg: '#fff3e0',
-      trend: '-5%',
-      trendUp: false
     },
     {
       title: 'Success Rate',
-      value: '98.5%',
+      value: stats.successRate !== null ? `${stats.successRate}%` : '—',
       subtitle: 'payment success',
       icon: CheckCircle,
       color: '#9c27b0',
       bg: '#f3e5f5',
-      trend: '+2%',
-      trendUp: true
-    }
+    },
   ]
   
   if (status === 'loading' || isLoading) {
@@ -227,12 +246,14 @@ export default function PaymentsOverviewPage() {
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: card.bg }}>
                   <Icon className="h-5 w-5" style={{ color: card.color }} />
                 </div>
-                <span className={`text-xs font-semibold flex items-center gap-0.5 ${
-                  card.trendUp ? 'text-green-600' : 'text-red-500'
-                }`}>
-                  {card.trendUp ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-                  {card.trend}
-                </span>
+                {card.trend && (
+                  <span className={`text-xs font-semibold flex items-center gap-0.5 ${
+                    card.trendUp ? 'text-green-600' : 'text-red-500'
+                  }`}>
+                    {card.trendUp ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                    {card.trend}
+                  </span>
+                )}
               </div>
               <p className="text-2xl font-bold text-slate-900">{card.value}</p>
               <p className="text-xs text-slate-500 mt-1">{card.title}</p>
