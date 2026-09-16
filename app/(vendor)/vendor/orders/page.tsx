@@ -12,7 +12,22 @@ import { OrderStatusBadge } from '@/components/vendor/orders/OrderStatusBadge'
 import { Rental, RentalStatus, STATUS_CONFIG } from './types'
 import { useToast } from '@/hooks/useToast'
 import { OrderDetailsModal } from '@/components/vendor/orders/OrderDetailsModal'
+import { OrderActionDialog, OrderAction } from '@/components/vendor/orders/OrderActionDialog'
 import { toast } from 'sonner'
+
+/**
+ * Actions that must go through the confirmation dialog. Accepting an order, closing
+ * a return or ruling on an extension all change money or custody, so none of them
+ * should be a single unguarded click — and two of them require a request body that
+ * the API validates.
+ */
+const DIALOG_ACTIONS: OrderAction[] = [
+  'confirm',
+  'activate',
+  'complete_return',
+  'approve_extension',
+  'reject_extension',
+]
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -41,6 +56,8 @@ export default function VendorOrdersPage() {
   const [selectedRental, setSelectedRental] = useState<Rental | null>(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [dialog, setDialog] = useState<{ rental: Rental; action: OrderAction } | null>(null)
+  const [receiptLoadingId, setReceiptLoadingId] = useState<string | null>(null)
   
   const fetchRentals = useCallback(async (showLoading = true) => {
     if (status !== 'authenticated') return
@@ -83,45 +100,68 @@ export default function VendorOrdersPage() {
     }
   }, [fetchRentals, status, router])
   
-  const handleAction = async (rental: Rental, action: string) => {
+  /**
+   * Download this rental's invoice PDF through the vendor-scoped route.
+   *
+   * Used by the `view_receipt` action on completed orders. The endpoint is scoped to
+   * the logged-in vendor server-side, so the ids in the URL cannot be swapped to
+   * read another vendor's invoice.
+   */
+  const downloadInvoice = async (rental: Rental) => {
+    setReceiptLoadingId(rental._id)
     try {
       const headers = await getAuthHeaders()
-      let endpoint = ''
-      let method = 'POST'
-      
-      switch(action) {
-        case 'confirm':
-          endpoint = `/api/v1/rentals/vendor/${rental._id}/confirm`
-          break
-        case 'mark_delivery':
-          endpoint = `/api/v1/rentals/vendor/${rental._id}/deliver`
-          break
-        case 'mark_delivered':
-          endpoint = `/api/v1/rentals/vendor/${rental._id}/deliver`
-          break
-        case 'activate':
-          endpoint = `/api/v1/rentals/vendor/${rental._id}/activate`
-          break
-        case 'complete_return':
-          endpoint = `/api/v1/rentals/vendor/${rental._id}/return/complete`
-          break
-        default:
-          toast.error(`Action "${action}" not implemented yet`)
-          return
+      const res = await fetch(`${BASE_URL}/api/v1/vendor/invoices/${rental._id}/download`, {
+        headers,
+      })
+
+      if (!res.ok) {
+        // Error bodies are usually JSON, but a proxy failure will not be — never
+        // let a failed `.json()` mask the real status code.
+        const body = await res.json().catch(() => null)
+        toast.error(body?.message || `Could not download the invoice (HTTP ${res.status})`)
+        return
       }
-      
-      const res = await fetch(`${BASE_URL}${endpoint}`, { method, headers })
-      const data = await res.json()
-      
-      if (data.success) {
-        toast.success(`Order ${action.replace('_', ' ')} successfully`)
-        fetchRentals(false)
-      } else {
-        toast.error(data.message || 'Action failed')
-      }
-    } catch (error) {
-      toast.error('Failed to perform action')
+
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `invoice-${rental.rentalNumber}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(link)
+    } catch {
+      toast.error('Could not download the invoice')
+    } finally {
+      setReceiptLoadingId(null)
     }
+  }
+
+  const handleAction = async (rental: Rental, action: string) => {
+    // Money/custody changes go through the dialog, never straight from the row.
+    if (DIALOG_ACTIONS.includes(action as OrderAction)) {
+      setShowDetailsModal(false)
+      setDialog({ rental, action: action as OrderAction })
+      return
+    }
+
+    if (action === 'arrange_delivery') {
+      // Delivery is arranged on its own screen — the vendor does not mark the order
+      // delivered, the delivery partner does that with proof of hand-over.
+      router.push('/vendor/delivery')
+      return
+    }
+
+    if (action === 'view_receipt') {
+      await downloadInvoice(rental)
+      return
+    }
+
+    // Every action in STATUS_CONFIG is wired; this only fires if a future status
+    // ships a button before its handler does.
+    toast.error(`Action "${action}" is not available for this order`)
   }
   
   const stats = [
@@ -239,6 +279,7 @@ export default function VendorOrdersPage() {
                   rental={rental}
                   onViewDetails={(r) => { setSelectedRental(r); setShowDetailsModal(true) }}
                   onAction={handleAction}
+                  actingAction={receiptLoadingId === rental._id ? 'view_receipt' : null}
                 />
               ))}
             </div>
@@ -295,6 +336,20 @@ export default function VendorOrdersPage() {
           rental={selectedRental}
           onClose={() => { setShowDetailsModal(false); setSelectedRental(null) }}
           onAction={handleAction}
+        />
+      )}
+
+      {/* Confirmation dialog for actions that change money or custody */}
+      {dialog && (
+        <OrderActionDialog
+          rental={dialog.rental}
+          action={dialog.action}
+          onClose={() => setDialog(null)}
+          onSuccess={(message) => {
+            setDialog(null)
+            toast.success(message)
+            fetchRentals(false)
+          }}
         />
       )}
     </div>

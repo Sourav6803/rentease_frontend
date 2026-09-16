@@ -75,36 +75,22 @@ export default function ActiveRentalsPage() {
     }
   }, [fetchRentals, status, router])
   
+  /**
+   * Active rentals have no vendor action: extending and returning are the customer's
+   * to initiate (`POST /rentals/:id/extend`, `POST /rentals/:id/return/initiate`).
+   * This used to call those customer routes with a vendor token, which the services
+   * reject with a 404 because they filter on `user: userId`.
+   *
+   * The map in orders/types.ts therefore lists no actions for `active`, so this only
+   * runs if that changes — in which case the dialog handles the money-carrying ones.
+   */
   const handleAction = async (rental: Rental, action: string) => {
-    try {
-      const headers = await getAuthHeaders()
-      let endpoint = ''
-      
-      switch(action) {
-        case 'extend':
-          // Handle extension - show modal for months
-          toast.info('Extension feature - select months')
-          return
-        case 'initiate_return':
-          endpoint = `/api/v1/rentals/${rental._id}/return/initiate`
-          break
-        default:
-          toast.error(`Action "${action}" not implemented yet`)
-          return
-      }
-      
-      const res = await fetch(`${BASE_URL}${endpoint}`, { method: 'POST', headers })
-      const data = await res.json()
-      
-      if (data.success) {
-        toast.success(`Action completed successfully`)
-        fetchRentals()
-      } else {
-        toast.error(data.message || 'Action failed')
-      }
-    } catch (error) {
-      toast.error('Failed to perform action')
+    if (action === 'view_receipt') {
+      toast.info('Invoices are available from the order details screen')
+      return
     }
+
+    toast.error(`Action "${action}" is not available for an active rental`)
   }
   
   const hasActiveFilters = searchTerm !== '' || dateRange.start !== '' || dateRange.end !== ''

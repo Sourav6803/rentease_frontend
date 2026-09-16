@@ -22,10 +22,36 @@ async function getAuthHeaders() {
   }
 }
 
+/**
+ * ₹35,000 → "₹35.0K", ₹900 → "₹900", ₹0 → "₹0".
+ *
+ * The cards previously always rendered `(value / 1000).toFixed(1) + 'K'`, which
+ * turned any amount below ₹1,000 into "₹0.0K" — indistinguishable from no money at
+ * all. A `0` here now means genuinely nothing, not "rounded down".
+ */
+function formatCompactINR(value: number) {
+  const n = Number(value) || 0
+  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`
+  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`
+  if (n >= 1000) return `₹${(n / 1000).toFixed(1)}K`
+  return `₹${Math.round(n).toLocaleString('en-IN')}`
+}
+
 interface PaymentStats {
-  totalRevenue: number
-  totalPayments: number
-  averagePayment: number
+  /**
+   * Account totals, computed by the API WITHOUT the period filter. These are what
+   * the "Total Revenue" / "Avg. Transaction" cards mean.
+   *
+   * They used to read the period-scoped `overview`, while this page defaults the
+   * period to "month" — so a vendor whose successful payments all fell outside the
+   * current calendar month saw ₹0 revenue and ₹0 average, however much history the
+   * account had.
+   */
+  allTime: {
+    totalAmount: number
+    totalCount: number
+    averageAmount: number
+  }
   pendingPayout: number
   thisMonthRevenue: number
   lastMonthRevenue: number
@@ -58,9 +84,7 @@ export default function PaymentsOverviewPage() {
   const  toast  = useToast()
   
   const [stats, setStats] = useState<PaymentStats>({
-    totalRevenue: 0,
-    totalPayments: 0,
-    averagePayment: 0,
+    allTime: { totalAmount: 0, totalCount: 0, averageAmount: 0 },
     pendingPayout: 0,
     thisMonthRevenue: 0,
     lastMonthRevenue: 0,
@@ -78,60 +102,85 @@ export default function PaymentsOverviewPage() {
     try {
       const headers = await getAuthHeaders()
       
-      // Fetch payment stats
+      // Stats first: it tells us whether the API already provides the period-scoped
+      // `trend` series, which decides whether the second payments call is needed.
       const statsRes = await fetch(`${BASE_URL}/api/v1/payments/stats?period=${selectedPeriod}`, { headers })
+      if (!statsRes.ok) {
+        throw new Error(`Payment stats request failed with HTTP ${statsRes.status}`)
+      }
       const statsData = await statsRes.json()
+      const raw = statsData?.data || {}
       
-      // Fetch recent payments
-      const paymentsRes = await fetch(`${BASE_URL}/api/v1/payments/vendor/me?limit=5`, { headers })
-      const paymentsData = await paymentsRes.json()
+      // An older backend has no `trend`, so fall back to deriving the monthly
+      // buckets from the recent payments — otherwise the chart renders blank.
+      const trendFromApi: MonthlyTrend[] | null = Array.isArray(raw.trend) ? raw.trend : null
       
-      // Fetch monthly trends
-      const trendsRes = await fetch(`${BASE_URL}/api/v1/payments/vendor/me?limit=100`, { headers })
-      const trendsData = await trendsRes.json()
+      const [paymentsRes, trendsRes] = await Promise.all([
+        // Fetch recent payments
+        fetch(`${BASE_URL}/api/v1/payments/vendor/me?limit=5`, { headers }),
+        trendFromApi
+          ? Promise.resolve(null)
+          : fetch(`${BASE_URL}/api/v1/payments/vendor/me?limit=100`, { headers }),
+      ])
       
       if (statsData.success) {
-        const overview = statsData.data.overview?.[0] || {}
+        // `allTime` is the account total — the correct source for the KPI cards.
+        // `overview` is period-scoped and only serves as a fallback for an older
+        // backend that does not send `allTime` yet.
+        const allTime = raw.allTime || raw.overview?.[0] || {}
         setStats({
-          totalRevenue: overview.totalAmount || 0,
-          totalPayments: overview.totalCount || 0,
-          averagePayment: overview.averageAmount || 0,
-          // These four used to be hardcoded — the monthly figures and pending payouts
-          // to 0, and growth to a fabricated 12.5 — so the cards displayed numbers
-          // unrelated to the account. The API now returns real values.
-          pendingPayout: statsData.data.pendingPayout || 0,
-          thisMonthRevenue: statsData.data.thisMonthRevenue || 0,
-          lastMonthRevenue: statsData.data.lastMonthRevenue || 0,
-          growth: typeof statsData.data.growth === 'number' ? statsData.data.growth : null,
-          successRate:
-            typeof statsData.data.successRate === 'number' ? statsData.data.successRate : null,
+          allTime: {
+            totalAmount: allTime.totalAmount || 0,
+            totalCount: allTime.totalCount || 0,
+            averageAmount: allTime.averageAmount || 0,
+          },
+          // These used to be hardcoded — the monthly figures and pending payout to 0,
+          // and growth to a fabricated 12.5 — so the cards showed numbers unrelated to
+          // the account. The API now returns real values.
+          pendingPayout: raw.pendingPayout || 0,
+          thisMonthRevenue: raw.thisMonthRevenue || 0,
+          lastMonthRevenue: raw.lastMonthRevenue || 0,
+          growth: typeof raw.growth === 'number' ? raw.growth : null,
+          successRate: typeof raw.successRate === 'number' ? raw.successRate : null,
         })
-      }
-      
-      if (paymentsData.success) {
-        setRecentPayments(paymentsData.data.payments || [])
-      }
-      
-      if (trendsData.success) {
-        // Process monthly trends from payments
-        const payments = trendsData.data.payments || []
-        const monthlyMap = new Map()
         
-        payments.forEach((payment: any) => {
-          const date = new Date(payment.createdAt)
-          const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`
-          const monthName = format(date, 'MMM yyyy')
+        if (trendFromApi) {
+          setMonthlyTrends(trendFromApi)
+        }
+      }
+      
+      if (paymentsRes.ok) {
+        const paymentsData = await paymentsRes.json()
+        if (paymentsData.success) {
+          setRecentPayments(paymentsData.data?.payments || [])
+        }
+      }
+      
+      if (trendsRes && trendsRes.ok) {
+        const trendsData = await trendsRes.json()
+        if (trendsData.success) {
+          // Process monthly trends from payments
+          const payments = trendsData.data?.payments || []
+          const monthlyMap = new Map<string, MonthlyTrend>()
           
-          if (!monthlyMap.has(monthKey)) {
-            monthlyMap.set(monthKey, { month: monthName, revenue: 0, count: 0 })
-          }
-          const entry = monthlyMap.get(monthKey)
-          entry.revenue += payment.amount
-          entry.count += 1
-        })
-        
-        const trends = Array.from(monthlyMap.values()).slice(-6)
-        setMonthlyTrends(trends)
+          payments.forEach((payment: any) => {
+            const date = new Date(payment.createdAt)
+            // A payment with a missing/invalid date would land in an "Invalid Date"
+            // bucket, so skip it rather than render a garbage axis label.
+            if (Number.isNaN(date.getTime())) return
+            const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`
+            const monthName = format(date, 'MMM yyyy')
+            
+            if (!monthlyMap.has(monthKey)) {
+              monthlyMap.set(monthKey, { month: monthName, revenue: 0, count: 0 })
+            }
+            const entry = monthlyMap.get(monthKey)!
+            entry.revenue += Number(payment.amount) || 0
+            entry.count += 1
+          })
+          
+          setMonthlyTrends(Array.from(monthlyMap.values()).slice(-6))
+        }
       }
     } catch (error) {
       toast.error('Failed to load payment data')
@@ -176,33 +225,42 @@ export default function PaymentsOverviewPage() {
     bg: string
     trend?: string
     trendUp?: boolean
+    /** Why the badge is there — the badge alone is ambiguous next to an all-time total. */
+    trendTitle?: string
   }> = [
     {
       title: 'Total Revenue',
-      value: `₹${(stats.totalRevenue / 1000).toFixed(1)}K`,
-      subtitle: `from ${stats.totalPayments} transactions`,
+      value: formatCompactINR(stats.allTime.totalAmount),
+      subtitle: `all time · ${stats.allTime.totalCount} transaction${
+        stats.allTime.totalCount === 1 ? '' : 's'
+      }`,
       icon: DollarSign,
       color: '#2874f0',
       bg: '#ebf3fb',
+      // The badge is month-over-month, while the card value is all-time — so it
+      // carries a title explaining exactly which two figures it compares.
       ...(stats.growth !== null
         ? {
             trend: `${stats.growth >= 0 ? '+' : ''}${stats.growth}%`,
             trendUp: stats.growth >= 0,
+            trendTitle: `Month over month: ${formatCompactINR(
+              stats.thisMonthRevenue,
+            )} this month vs ${formatCompactINR(stats.lastMonthRevenue)} last month`,
           }
         : {}),
     },
     {
       title: 'Avg. Transaction',
-      value: `₹${Math.round(stats.averagePayment).toLocaleString()}`,
-      subtitle: 'per payment',
+      value: `₹${Math.round(stats.allTime.averageAmount).toLocaleString('en-IN')}`,
+      subtitle: 'per payment, all time',
       icon: TrendingUp,
       color: '#21a056',
       bg: '#e8f5e9',
     },
     {
       title: 'Pending Payout',
-      value: `₹${(stats.pendingPayout / 1000).toFixed(1)}K`,
-      subtitle: 'to be settled',
+      value: formatCompactINR(stats.pendingPayout),
+      subtitle: 'awaiting settlement',
       icon: Wallet,
       color: '#fb641b',
       bg: '#fff3e0',
@@ -247,9 +305,12 @@ export default function PaymentsOverviewPage() {
                   <Icon className="h-5 w-5" style={{ color: card.color }} />
                 </div>
                 {card.trend && (
-                  <span className={`text-xs font-semibold flex items-center gap-0.5 ${
-                    card.trendUp ? 'text-green-600' : 'text-red-500'
-                  }`}>
+                  <span
+                    title={card.trendTitle}
+                    className={`text-xs font-semibold flex items-center gap-0.5 ${
+                      card.trendUp ? 'text-green-600' : 'text-red-500'
+                    }`}
+                  >
                     {card.trendUp ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
                     {card.trend}
                   </span>
@@ -268,7 +329,11 @@ export default function PaymentsOverviewPage() {
         <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
           <div>
             <h2 className="font-semibold text-slate-800">Revenue Trend</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Monthly payment history</p>
+            {/* The period buttons below scope THIS chart only — the KPI cards above
+                are all-time totals and deliberately do not move with them. */}
+            <p className="text-xs text-slate-500 mt-0.5">
+              Successful payments per month, for the selected period
+            </p>
           </div>
           <div className="flex gap-2">
             {['month', 'quarter', 'year'].map(period => (
@@ -311,7 +376,7 @@ export default function PaymentsOverviewPage() {
             })
           ) : (
             <div className="w-full text-center text-slate-400 py-10">
-              No transaction data available
+              No successful payments in this period
             </div>
           )}
         </div>

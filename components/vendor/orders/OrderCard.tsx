@@ -3,8 +3,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Calendar, MapPin, Package, DollarSign, ChevronRight, Eye, Truck, CheckCircle, XCircle } from 'lucide-react'
-// import { Rental, STATUS_CONFIG } from "@/app/(vendor)/orders/types"
+import { Calendar, MapPin, Package, DollarSign, ChevronRight, Eye, Truck, CheckCircle, Ban, RefreshCw, FileText } from 'lucide-react'
 import { OrderStatusBadge } from './OrderStatusBadge'
 import { format } from 'date-fns'
 import { Rental, STATUS_CONFIG } from '@/app/(vendor)/vendor/orders/types'
@@ -13,48 +12,49 @@ interface OrderCardProps {
   rental: Rental
   onViewDetails: (rental: Rental) => void
   onAction: (rental: Rental, action: string) => void
+  /** Action currently in flight for THIS row, so the button can show a spinner. */
+  actingAction?: string | null
 }
 
-export function OrderCard({ rental, onViewDetails, onAction }: OrderCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const config = STATUS_CONFIG[rental.status]
+/**
+ * Labels describe what the vendor actually does. They used to promise things the
+ * endpoint did not do — "Mark for Delivery" called an endpoint that marked the
+ * rental *delivered*, and "Extend" / "Initiate Return" were customer-only actions
+ * that resolved to no handler at all.
+ */
+const ACTION_LABELS: Record<string, string> = {
+  confirm: 'Accept Order',
+  arrange_delivery: 'Arrange Delivery',
+  activate: 'Start Rental',
+  complete_return: 'Complete Return',
+  approve_extension: 'Approve',
+  reject_extension: 'Reject',
+  view_receipt: 'View Invoice',
+}
 
-  console.log('rental-->', rental)
+export function OrderCard({ rental, onViewDetails, onAction, actingAction = null }: OrderCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  // A status the frontend does not know about must not blank the whole row.
+  const config = STATUS_CONFIG[rental.status] ?? STATUS_CONFIG.pending
   
   const primaryImage = rental.product.media.images?.find(img => img.isPrimary) || rental.product.media.images?.[0]
   
   const getActionIcon = (action: string) => {
     switch(action) {
       case 'confirm': return <CheckCircle className="h-3.5 w-3.5" />
-      case 'mark_delivery': return <Truck className="h-3.5 w-3.5" />
-      case 'mark_delivered': return <CheckCircle className="h-3.5 w-3.5" />
+      case 'arrange_delivery': return <Truck className="h-3.5 w-3.5" />
       case 'activate': return <Package className="h-3.5 w-3.5" />
-      case 'initiate_return': return <Package className="h-3.5 w-3.5" />
       case 'complete_return': return <CheckCircle className="h-3.5 w-3.5" />
+      case 'approve_extension': return <CheckCircle className="h-3.5 w-3.5" />
+      case 'reject_extension': return <Ban className="h-3.5 w-3.5" />
+      case 'view_receipt': return <FileText className="h-3.5 w-3.5" />
       default: return <Eye className="h-3.5 w-3.5" />
     }
   }
   
-  const getActionLabel = (action: string) => {
-    const labels: Record<string, string> = {
-      confirm: 'Confirm Order',
-      cancel: 'Cancel',
-      mark_delivery: 'Mark for Delivery',
-      dispatch: 'Dispatch',
-      mark_delivered: 'Mark Delivered',
-      activate: 'Activate',
-      extend: 'Extend',
-      initiate_return: 'Initiate Return',
-      schedule_pickup: 'Schedule Pickup',
-      complete_return: 'Complete Return',
-      approve_extension: 'Approve',
-      reject_extension: 'Reject',
-      view_receipt: 'View Receipt',
-      send_reminder: 'Send Reminder',
-      resolve: 'Resolve',
-    }
-    return labels[action] || action
-  }
+  const getActionLabel = (action: string) => ACTION_LABELS[action] || action.replace(/_/g, ' ')
+  
+  const isDestructive = (action: string) => action === 'reject_extension'
   
   return (
     <motion.div
@@ -117,16 +117,24 @@ export function OrderCard({ rental, onViewDetails, onAction }: OrderCardProps) {
             </p>
             
             <div className="flex gap-2 mt-3">
-              {config.actions.slice(0, 2).map(action => (
-                <button
-                  key={action}
-                  onClick={() => onAction(rental, action)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#2874f0] text-white hover:bg-[#1a5fd4] transition-colors"
-                >
-                  {getActionIcon(action)}
-                  {getActionLabel(action)}
-                </button>
-              ))}
+              {config.actions.slice(0, 2).map(action => {
+                const busy = actingAction === action
+                return (
+                  <button
+                    key={action}
+                    onClick={() => onAction(rental, action)}
+                    disabled={actingAction !== null}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                      isDestructive(action)
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-[#2874f0] hover:bg-[#1a5fd4]'
+                    }`}
+                  >
+                    {busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : getActionIcon(action)}
+                    {busy ? 'Working…' : getActionLabel(action)}
+                  </button>
+                )
+              })}
               <button
                 onClick={() => onViewDetails(rental)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"

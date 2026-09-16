@@ -52,8 +52,6 @@ const STATUS_ICONS: Record<RentalStatus, any> = {
 export function OrderDetailsModal({ rental, onClose, onAction }: OrderDetailsModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'payments' | 'details'>('overview')
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null)
-  const [showExtensionModal, setShowExtensionModal] = useState(false)
-  const [extensionMonths, setExtensionMonths] = useState(1)
   
   const currentStepIndex = STATUS_STEPS.indexOf(rental.status)
   const config = STATUS_CONFIG[rental.status]
@@ -69,55 +67,10 @@ export function OrderDetailsModal({ rental, onClose, onAction }: OrderDetailsMod
     }
   }
   
-  const handleExtension = async () => {
-    setIsActionLoading('extend')
-    try {
-      // Call extension API
-      const { getSession } = await import('next-auth/react')
-      const session = await getSession()
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/rentals/${rental._id}/extend`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.user?.accessToken}`
-        },
-        body: JSON.stringify({ extensionMonths })
-      })
-      const data = await res.json()
-      if (data.success) {
-        setShowExtensionModal(false)
-        await onAction(rental, 'extend')
-      }
-    } finally {
-      setIsActionLoading(null)
-    }
-  }
-  
-  const handleDownloadInvoice = async () => {
-    try {
-      const { getSession } = await import('next-auth/react')
-      const session = await getSession()
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/rentals/${rental._id}/invoice/download`, {
-        headers: {
-          'Authorization': `Bearer ${session?.user?.accessToken}`
-        }
-      })
-      
-      if (res.ok) {
-        const blob = await res.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `invoice-${rental.rentalNumber}.pdf`
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-      }
-    } catch (error) {
-      console.error('Failed to download invoice:', error)
-    }
-  }
+  // Invoice download is handled by the page (`view_receipt`) so there is a single
+  // implementation, and so it goes through the vendor-scoped route rather than the
+  // customer's `/rentals/:id/invoice/download`.
+  const requestInvoice = () => onAction(rental, 'view_receipt')
   
   return (
     <>
@@ -453,7 +406,7 @@ export function OrderDetailsModal({ rental, onClose, onAction }: OrderDetailsMod
                     
                     {/* Invoice Button */}
                     <button
-                      onClick={handleDownloadInvoice}
+                      onClick={requestInvoice}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
                     >
                       <Download className="h-4 w-4" />
@@ -530,43 +483,19 @@ export function OrderDetailsModal({ rental, onClose, onAction }: OrderDetailsMod
             <div className="border-t border-slate-200 px-6 py-4 bg-slate-50">
               <div className="flex flex-wrap gap-3 justify-end">
                 {config.actions.map(action => {
-                  // Special handling for extension
-                  if (action === 'extend') {
-                    return (
-                      <button
-                        key={action}
-                        onClick={() => setShowExtensionModal(true)}
-                        disabled={isActionLoading !== null}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
-                      >
-                        {isActionLoading === 'extend' ? (
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-4 w-4" />
-                        )}
-                        Extend Rental
-                      </button>
-                    )
-                  }
-                  
+                  // Labels must match what the vendor actually does — see the action
+                  // map in app/(vendor)/vendor/orders/types.ts for the full rationale.
                   const actionLabels: Record<string, string> = {
-                    confirm: 'Confirm Order',
-                    mark_delivery: 'Mark for Delivery',
-                    dispatch: 'Dispatch',
-                    mark_delivered: 'Mark Delivered',
-                    activate: 'Activate Rental',
-                    initiate_return: 'Initiate Return',
-                    schedule_pickup: 'Schedule Pickup',
+                    confirm: 'Accept Order',
+                    arrange_delivery: 'Arrange Delivery',
+                    activate: 'Start Rental',
                     complete_return: 'Complete Return',
                     approve_extension: 'Approve Extension',
-                    reject_extension: 'Reject',
-                    view_receipt: 'View Receipt',
-                    send_reminder: 'Send Reminder',
-                    resolve: 'Resolve Dispute',
-                    cancel: 'Cancel Order',
+                    reject_extension: 'Reject Extension',
+                    view_receipt: 'View Invoice',
                   }
                   
-                  const isDestructive = action === 'cancel' || action === 'reject_extension'
+                  const isDestructive = action === 'reject_extension'
                   
                   return (
                     <button
@@ -584,12 +513,12 @@ export function OrderDetailsModal({ rental, onClose, onAction }: OrderDetailsMod
                       ) : (
                         <>
                           {action === 'confirm' && <CheckCircle className="h-4 w-4" />}
-                          {action === 'mark_delivery' && <Truck className="h-4 w-4" />}
-                          {action === 'mark_delivered' && <Check className="h-4 w-4" />}
+                          {action === 'arrange_delivery' && <Truck className="h-4 w-4" />}
                           {action === 'activate' && <Package className="h-4 w-4" />}
-                          {action === 'initiate_return' && <Package className="h-4 w-4" />}
                           {action === 'complete_return' && <Check className="h-4 w-4" />}
-                          {action === 'cancel' && <Ban className="h-4 w-4" />}
+                          {action === 'approve_extension' && <CheckCircle className="h-4 w-4" />}
+                          {action === 'reject_extension' && <Ban className="h-4 w-4" />}
+                          {action === 'view_receipt' && <Receipt className="h-4 w-4" />}
                         </>
                       )}
                       {actionLabels[action] || action.replace(/_/g, ' ')}
@@ -598,7 +527,7 @@ export function OrderDetailsModal({ rental, onClose, onAction }: OrderDetailsMod
                 })}
                 
                 <button
-                  onClick={handleDownloadInvoice}
+                  onClick={requestInvoice}
                   className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
                 >
                   <Receipt className="h-4 w-4" />
@@ -610,51 +539,6 @@ export function OrderDetailsModal({ rental, onClose, onAction }: OrderDetailsMod
         </div>
       </div>
       
-      {/* Extension Modal */}
-      {showExtensionModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowExtensionModal(false)} />
-          <div className="relative bg-white rounded-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Extend Rental</h3>
-            <p className="text-sm text-slate-600 mb-4">
-              How many additional months would you like to extend this rental?
-            </p>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-2">Extension Period</label>
-              <select
-                value={extensionMonths}
-                onChange={(e) => setExtensionMonths(parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2874f0]/30"
-              >
-                {[1, 2, 3, 4, 5, 6].map(months => (
-                  <option key={months} value={months}>{months} month{months !== 1 ? 's' : ''}</option>
-                ))}
-              </select>
-            </div>
-            <div className="bg-slate-50 rounded-lg p-3 mb-4">
-              <div className="flex justify-between text-sm">
-                <span>Additional Cost (₹{rental.rentalDetails.monthlyRent} × {extensionMonths})</span>
-                <span className="font-semibold">₹{(rental.rentalDetails.monthlyRent * extensionMonths).toLocaleString()}</span>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowExtensionModal(false)}
-                className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleExtension}
-                disabled={isActionLoading !== null}
-                className="flex-1 px-4 py-2 bg-[#2874f0] text-white rounded-lg font-semibold hover:bg-[#1a5fd4] disabled:opacity-50"
-              >
-                {isActionLoading === 'extend' ? 'Processing...' : 'Confirm Extension'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }

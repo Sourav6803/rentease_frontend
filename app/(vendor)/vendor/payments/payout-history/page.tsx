@@ -41,6 +41,11 @@ interface Payout {
   currency?: string
   status: PayoutStatus
   method: string
+  /** Populated by the receipt endpoint (`getPayout` populates name + vendorId). */
+  vendor?: {
+    business?: { name?: string }
+    vendorId?: string
+  }
   periodStart?: string
   periodEnd?: string
   entryIds?: string[]
@@ -89,6 +94,233 @@ const statusConfig: Record<
  */
 function getStatusConfig(status: string) {
   return statusConfig[status as PayoutStatus] ?? statusConfig.pending
+}
+
+/** One ledger entry settled by this payout, as returned inside the receipt. */
+interface ReceiptEntry {
+  _id: string
+  type?: string
+  direction?: string
+  amount?: number
+  status?: string
+  description?: string
+  createdAt?: string
+}
+
+/** Response body of GET /api/v1/vendor/payouts/:id/receipt. */
+interface PayoutReceiptPayload {
+  payout?: Payout
+  entries?: ReceiptEntry[]
+  receiptNumber?: string
+  generatedAt?: string
+  isPaid?: boolean
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function formatINR(value: unknown) {
+  const n = Number(value)
+  return Number.isFinite(n)
+    ? `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+    : '—'
+}
+
+function safeDate(value?: string | null, pattern = 'dd MMM yyyy') {
+  if (!value) return '—'
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '—' : format(d, pattern)
+}
+
+/**
+ * Standalone, print-ready receipt document.
+ *
+ * Rendered into a new tab from the API payload instead of a client-side PDF so the
+ * numbers on the receipt are exactly the numbers the server stored (gross, every
+ * deduction, the net, the UTR and the bank snapshot as at payout time).
+ */
+function buildReceiptHtml(receipt: PayoutReceiptPayload, fallback: Payout) {
+  const p: Payout = receipt?.payout ?? fallback
+  const entries = Array.isArray(receipt?.entries) ? receipt.entries : []
+  const d = p.deductions || {}
+  const bank = p.bankAccountSnapshot || {}
+  const gateway = p.gateway || {}
+
+  const vendorName = p.vendor?.business?.name || 'Vendor'
+  const vendorCode = p.vendor?.vendorId || ''
+  const receiptNumber = receipt?.receiptNumber || p.receiptNumber || '—'
+  const netAmount = d.netAmount ?? p.amount ?? 0
+  const isTestMode = gateway.mode === 'test'
+
+  const metaRow = (label: string, value: string) =>
+    `<div class="row"><span class="k">${escapeHtml(label)}</span><span class="v">${value}</span></div>`
+
+  const deductionRows = (
+    [
+      ['Gross earnings', d.grossAmount],
+      ['Platform commission', d.commission],
+      ['Platform fee', d.platformFee],
+      ['Tax deducted', d.tax],
+      ['Payout processing fee', d.processingFee],
+    ] as Array<[string, number | undefined]>
+  )
+    .map(
+      ([label, value]) =>
+        `<tr><td>${escapeHtml(label)}</td><td class="num">${escapeHtml(formatINR(value ?? 0))}</td></tr>`,
+    )
+    .join('')
+
+  const entryRows = entries.length
+    ? entries
+        .map(
+          (entry) => `<tr>
+            <td>${escapeHtml(safeDate(entry.createdAt))}</td>
+            <td>${escapeHtml(entry.type || '—')}${
+              entry.direction ? ` <span class="muted">(${escapeHtml(entry.direction)})</span>` : ''
+            }</td>
+            <td>${escapeHtml(entry.description || '—')}</td>
+            <td>${escapeHtml(entry.status || '—')}</td>
+            <td class="num">${escapeHtml(formatINR(entry.amount ?? 0))}</td>
+          </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="5" class="muted">No ledger entries are linked to this payout.</td></tr>'
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Payout receipt ${escapeHtml(p.payoutNumber)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 32px; background: #fff; }
+  .sheet { max-width: 780px; margin: 0 auto; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2874f0; padding-bottom: 16px; }
+  .brand { font-size: 22px; font-weight: 700; color: #2874f0; }
+  .brand small { display: block; font-size: 11px; font-weight: 400; color: #64748b; margin-top: 2px; }
+  .doc { text-align: right; }
+  .doc h1 { font-size: 15px; letter-spacing: 1.5px; margin: 0 0 4px; color: #334155; }
+  .doc .no { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; color: #0f172a; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin: 26px 0 8px; }
+  .grid { display: flex; gap: 24px; flex-wrap: wrap; }
+  .grid > div { flex: 1 1 300px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px dashed #e2e8f0; font-size: 13px; }
+  .k { color: #64748b; }
+  .v { font-weight: 600; text-align: right; word-break: break-word; }
+  .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; background: #f1f5f9; color: #475569; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 9px 10px; }
+  td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .muted { color: #94a3b8; }
+  tr.net td { font-weight: 700; border-top: 2px solid #0f172a; border-bottom: none; }
+  .paid-box { margin-top: 22px; display: flex; justify-content: space-between; align-items: center; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 16px 18px; }
+  .paid-box .label { font-size: 12px; color: #047857; text-transform: uppercase; letter-spacing: .5px; }
+  .paid-box .value { font-size: 26px; font-weight: 700; }
+  .flag { margin-top: 18px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+  .foot { margin-top: 28px; border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 11px; color: #94a3b8; }
+  .actions { max-width: 780px; margin: 0 auto 20px; display: flex; gap: 8px; }
+  .actions button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+  .actions button.primary { background: #2874f0; border-color: #2874f0; color: #fff; }
+  @media print { .actions { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="actions">
+  <button class="primary" onclick="window.print()">Print / Save as PDF</button>
+  <button onclick="window.close()">Close</button>
+</div>
+<div class="sheet">
+  <div class="head">
+    <div class="brand">RentEase<small>Furniture &amp; Appliance Rentals</small></div>
+    <div class="doc">
+      <h1>PAYOUT RECEIPT</h1>
+      <div class="no">${escapeHtml(receiptNumber)}</div>
+      <div class="muted" style="font-size:11px;margin-top:4px;">Generated ${escapeHtml(
+        safeDate(receipt?.generatedAt || new Date().toISOString(), 'dd MMM yyyy, hh:mm a'),
+      )}</div>
+    </div>
+  </div>
+
+  <h2>Paid to</h2>
+  <div class="grid">
+    <div>
+      ${metaRow('Vendor', escapeHtml(vendorName))}
+      ${vendorCode ? metaRow('Vendor ID', `<span class="mono">${escapeHtml(vendorCode)}</span>`) : ''}
+      ${metaRow('Payout number', `<span class="mono">${escapeHtml(p.payoutNumber)}</span>`)}
+      ${metaRow('Payout status', escapeHtml(getStatusConfig(p.status).label))}
+    </div>
+    <div>
+      ${metaRow('Method', escapeHtml(p.method))}
+      ${metaRow('Earnings period', `${
+        p.periodStart && p.periodEnd
+          ? `${escapeHtml(safeDate(p.periodStart))} – ${escapeHtml(safeDate(p.periodEnd))}`
+          : '—'
+      }`)}
+      ${metaRow('Initiated', escapeHtml(safeDate(p.createdAt, 'dd MMM yyyy, hh:mm a')))}
+      ${metaRow('Settled', escapeHtml(safeDate(p.processedAt, 'dd MMM yyyy, hh:mm a')))}
+    </div>
+  </div>
+
+  <h2>Bank reference</h2>
+  <div class="grid">
+    <div>
+      ${metaRow('Account holder', escapeHtml(bank.accountHolderName || '—'))}
+      ${metaRow('Bank', escapeHtml(bank.bankName || '—'))}
+      ${metaRow('Account number', `<span class="mono">${escapeHtml(bank.accountNumberMasked || '—')}</span>`)}
+    </div>
+    <div>
+      ${metaRow('IFSC', `<span class="mono">${escapeHtml(bank.ifscCode || '—')}</span>`)}
+      ${bank.upiId ? metaRow('UPI ID', `<span class="mono">${escapeHtml(bank.upiId)}</span>`) : ''}
+      ${metaRow('UTR', `<span class="mono">${escapeHtml(gateway.utr || '—')}</span>`)}
+      ${gateway.payoutId ? metaRow('Gateway payout ID', `<span class="mono">${escapeHtml(gateway.payoutId)}</span>`) : ''}
+    </div>
+  </div>
+
+  <h2>How this amount was arrived at</h2>
+  <table>
+    <thead><tr><th>Item</th><th class="num">Amount</th></tr></thead>
+    <tbody>
+      ${deductionRows}
+      <tr class="net"><td>Net amount paid</td><td class="num">${escapeHtml(formatINR(netAmount))}</td></tr>
+    </tbody>
+  </table>
+
+  <div class="paid-box">
+    <div class="label">${receipt?.isPaid === false ? 'Amount applied' : 'Amount transferred'}</div>
+    <div class="value">${escapeHtml(formatINR(netAmount))}</div>
+  </div>
+
+  ${isTestMode ? '<div class="flag"><strong>Test mode.</strong> This payout was processed against RazorpayX test keys — no real money moved.</div>' : ''}
+  ${
+    p.requiresManualTransfer
+      ? '<div class="flag"><strong>Manual transfer.</strong> The gateway integration was off, so this payout was settled by a bank transfer outside RazorpayX.</div>'
+      : ''
+  }
+
+  <h2>Settled earnings (${entries.length})</h2>
+  <table>
+    <thead>
+      <tr><th>Date</th><th>Type</th><th>Description</th><th>Status</th><th class="num">Amount</th></tr>
+    </thead>
+    <tbody>${entryRows}</tbody>
+  </table>
+
+  <div class="foot">
+    This is a system-generated payout receipt for ${escapeHtml(p.payoutNumber)}. Retain it for your
+    records. Any discrepancy should be raised with RentEase support within 7 days of the settlement
+    date shown above.
+  </div>
+</div>
+<script>setTimeout(function () { try { window.print(); } catch (e) {} }, 400);</script>
+</body>
+</html>`
 }
 
 function PayoutCard({ payout, onViewDetails }: { payout: Payout; onViewDetails: (payout: Payout) => void }) {
@@ -152,10 +384,52 @@ function PayoutCard({ payout, onViewDetails }: { payout: Payout; onViewDetails: 
 }
 
 function PayoutDetailsModal({ payout, onClose }: { payout: Payout; onClose: () => void }) {
+  const toast = useToast()
   const config = getStatusConfig(payout.status)
   const Icon = config.icon
   const bank = payout.bankAccountSnapshot
   const entryCount = payout.entryIds?.length ?? 0
+  const [isReceiptLoading, setIsReceiptLoading] = useState(false)
+
+  /**
+   * Fetch this payout's receipt from the vendor-scoped endpoint and render it as a
+   * printable document.
+   *
+   * The button used to be permanently disabled: the backend only exposed
+   * `GET /api/v1/admin/payouts/:id/receipt` (admin-only), and the original link
+   * pointed at `/api/v1/payouts/:id/receipt` — no such route, and resolved against
+   * the frontend origin, so it always 404'd.
+   */
+  const openReceipt = async () => {
+    setIsReceiptLoading(true)
+    try {
+      const headers = await getAuthHeaders()
+      const res = await fetch(
+        `${BASE_URL}/api/v1/vendor/payouts/${payout._id}/receipt`,
+        { headers },
+      )
+      const body = await res.json().catch(() => null)
+
+      if (!res.ok || !body?.success) {
+        toast.error(body?.message || `Could not load the receipt (HTTP ${res.status})`)
+        return
+      }
+
+      const win = window.open('', '_blank')
+      if (!win) {
+        // Pop-up blocked — the fetch succeeded, so tell the user exactly what to do.
+        toast.error('Allow pop-ups for this site to open the receipt')
+        return
+      }
+
+      win.document.write(buildReceiptHtml(body.data || {}, payout))
+      win.document.close()
+    } catch {
+      toast.error('Could not load the receipt')
+    } finally {
+      setIsReceiptLoading(false)
+    }
+  }
   
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -338,23 +612,17 @@ function PayoutDetailsModal({ payout, onClose }: { payout: Payout; onClose: () =
           </div>
           
           <div className="sticky bottom-0 border-t border-slate-200 px-6 py-4 bg-white">
-            {/* The only receipt route on the backend is
-                `GET /api/v1/admin/payouts/:id/receipt`, which is admin-only. This
-                button used to open `/api/v1/payouts/:id/receipt` — the wrong origin
-                (it resolved against the frontend host) AND a route that does not
-                exist — so it always 404'd. Disabled until a vendor-scoped endpoint
-                exists rather than pretending to work. */}
             <button
               type="button"
-              disabled
-              title="Receipt download requires a vendor-scoped API route, which does not exist yet."
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-200 text-slate-500 rounded-lg font-semibold cursor-not-allowed"
+              onClick={openReceipt}
+              disabled={isReceiptLoading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#2874f0] text-white rounded-lg font-semibold hover:bg-[#1e5fc4] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Download className="h-4 w-4" />
-              Receipt unavailable
+              {isReceiptLoading ? 'Preparing receipt…' : 'Download Receipt'}
             </button>
             <p className="mt-2 text-center text-xs text-slate-500">
-              Receipt download is not wired up for vendors yet. Your payout number is{' '}
+              Opens a printable receipt for{' '}
               <span className="font-mono">{payout.payoutNumber}</span>
               {payout.receiptNumber ? (
                 <>
@@ -362,7 +630,7 @@ function PayoutDetailsModal({ payout, onClose }: { payout: Payout; onClose: () =
                   (receipt <span className="font-mono">{payout.receiptNumber}</span>)
                 </>
               ) : null}
-              .
+              . Use Print → Save as PDF to keep a copy.
             </p>
           </div>
         </div>
@@ -383,16 +651,32 @@ export default function PayoutHistoryPage() {
   const [totalAmount, setTotalAmount] = useState(0)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [selectedPayout, setSelectedPayout] = useState<Payout | null>(null)
+  // `searchInput` is what the user types; `search` is what we actually query with.
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  
+  // Debounced so a payout number is not queried once per keystroke. Resets to page 1
+  // so a narrowed result set can never leave the user stranded on an empty page.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput.trim())
+      setCurrentPage(1)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchInput])
   
   const fetchPayouts = useCallback(async () => {
     if (status !== 'authenticated') return
     
     try {
+      // `isLoading` drives the full-page spinner, so it is only ever true for the
+      // first load. Re-fetches (page / filter / search) must not blank the page.
       const headers = await getAuthHeaders()
       const params = new URLSearchParams()
       params.set('page', currentPage.toString())
       params.set('limit', '10')
       if (statusFilter !== 'all') params.set('status', statusFilter)
+      if (search) params.set('search', search)
       
       const res = await fetch(`${BASE_URL}/api/v1/vendor/payouts?${params.toString()}`, { headers })
       const data = await res.json()
@@ -410,7 +694,7 @@ export default function PayoutHistoryPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentPage, statusFilter, status, toast])
+  }, [currentPage, statusFilter, search, status, toast])
   
   useEffect(() => {
     if (status === 'authenticated') {
@@ -468,20 +752,32 @@ export default function PayoutHistoryPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search by payout ID..."
               className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2874f0]/30"
             />
           </div>
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => {
+              setStatusFilter(e.target.value)
+              // A narrowed list is usually shorter, so start from the first page
+              // instead of leaving the user on a page that no longer exists.
+              setCurrentPage(1)
+            }}
             className="px-4 py-2.5 text-sm border border-slate-200 rounded-lg bg-white"
           >
+            {/* Values must match the Payout model's status enum. This list offered
+                "completed", which is not one of them — the API silently ignored the
+                value, so choosing it showed every payout rather than only the paid
+                ones. "cancelled" was missing entirely. */}
             <option value="all">All Status</option>
             <option value="pending">Pending</option>
             <option value="processing">Processing</option>
-            <option value="completed">Completed</option>
+            <option value="paid">Paid</option>
             <option value="failed">Failed</option>
+            <option value="cancelled">Cancelled</option>
           </select>
         </div>
       </div>
@@ -491,8 +787,24 @@ export default function PayoutHistoryPage() {
         {payouts.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 py-16 text-center">
             <Wallet className="h-12 w-12 mx-auto text-slate-300 mb-4" />
-            <h3 className="text-lg font-semibold text-slate-800">No Payouts Yet</h3>
-            <p className="text-sm text-slate-500 mt-1">Payouts will appear here once processed</p>
+            {/* "No Payouts Yet" was shown even when a filter or search was simply
+                excluding everything, which reads as "you have never been paid". */}
+            {statusFilter !== 'all' || search ? (
+              <>
+                <h3 className="text-lg font-semibold text-slate-800">No matching payouts</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Nothing matches the current filter{search ? ' and search' : ''}. Clear them to
+                  see your full history.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-slate-800">No Payouts Yet</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Payouts will appear here once processed
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
