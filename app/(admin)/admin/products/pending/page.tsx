@@ -58,12 +58,18 @@ const QUICK_REJECT_REASONS = [
   'Missing security deposit details',
 ]
 
+// Keys must match Product.condition exactly. The backend enum is
+// ['new', 'like-new', 'good', 'fair', 'refurbished'] and those are the values the API
+// actually returns. This map previously used `like_new` (underscore) and `poor`, so a
+// "Like New" listing — a real stored value, and the most common one on a rental
+// marketplace — rendered no badge at all, `refurbished` was missing entirely, and
+// `poor` could never occur on a Product.
 const CONDITION_META: Record<string, { label: string; color: string }> = {
-  new:      { label: 'Brand New',  color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-  like_new: { label: 'Like New',   color: 'text-sky-700 bg-sky-50 border-sky-200' },
-  good:     { label: 'Good',       color: 'text-blue-700 bg-blue-50 border-blue-200' },
-  fair:     { label: 'Fair',       color: 'text-amber-700 bg-amber-50 border-amber-200' },
-  poor:     { label: 'Poor',       color: 'text-red-700 bg-red-50 border-red-200' },
+  new:         { label: 'Brand New',   color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+  'like-new':  { label: 'Like New',    color: 'text-sky-700 bg-sky-50 border-sky-200' },
+  good:        { label: 'Good',        color: 'text-blue-700 bg-blue-50 border-blue-200' },
+  fair:        { label: 'Fair',        color: 'text-amber-700 bg-amber-50 border-amber-200' },
+  refurbished: { label: 'Refurbished', color: 'text-violet-700 bg-violet-50 border-violet-200' },
 }
 
 /* ─────────────────────── Helpers ────────────────────────────── */

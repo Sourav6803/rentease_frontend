@@ -61,12 +61,15 @@ const RENTAL_TIPS = [
   { icon: Zap, title: 'Quick Approval', desc: 'Products reviewed within 24 hours of submission.' },
 ]
 
+// Keys must match Product.condition exactly — the backend enum is
+// ['new', 'like-new', 'good', 'fair', 'refurbished']. `like_new` (underscore) never
+// matched a real value, so the badge fell through to the raw-string fallback.
 const CONDITION_LABELS: Record<string, { label: string; color: string }> = {
   new: { label: 'New', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  like_new: { label: 'Like New', color: 'bg-sky-100 text-sky-700 border-sky-200' },
+  'like-new': { label: 'Like New', color: 'bg-sky-100 text-sky-700 border-sky-200' },
   good: { label: 'Good', color: 'bg-blue-100 text-blue-700 border-blue-200' },
   fair: { label: 'Fair', color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  poor: { label: 'Poor', color: 'bg-red-100 text-red-700 border-red-200' },
+  refurbished: { label: 'Refurbished', color: 'bg-violet-100 text-violet-700 border-violet-200' },
 }
 
 /* ───────────────────────── Sub-components ───────────────────── */

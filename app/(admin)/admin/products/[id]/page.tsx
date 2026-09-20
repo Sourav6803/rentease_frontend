@@ -58,12 +58,15 @@ interface ProductDetail {
 }
 
 /* ───────────────────── Static / helpers ─────────────────────────── */
+// Keys must match Product.condition exactly — the backend enum is
+// ['new', 'like-new', 'good', 'fair', 'refurbished']. `like_new` (underscore) never
+// matched a real value, so the badge fell through to the raw-string fallback.
 const CONDITION_META: Record<string, { label: string; dot: string; bg: string; text: string }> = {
-  new:      { label: 'Brand New',  dot: 'bg-emerald-500', bg: 'bg-emerald-50',  text: 'text-emerald-700' },
-  like_new: { label: 'Like New',   dot: 'bg-sky-500',     bg: 'bg-sky-50',      text: 'text-sky-700'     },
-  good:     { label: 'Good',       dot: 'bg-blue-500',    bg: 'bg-blue-50',     text: 'text-blue-700'    },
-  fair:     { label: 'Fair',       dot: 'bg-amber-500',   bg: 'bg-amber-50',    text: 'text-amber-700'   },
-  poor:     { label: 'Poor',       dot: 'bg-red-500',     bg: 'bg-red-50',      text: 'text-red-700'     },
+  new:         { label: 'Brand New',   dot: 'bg-emerald-500', bg: 'bg-emerald-50',  text: 'text-emerald-700' },
+  'like-new':  { label: 'Like New',    dot: 'bg-sky-500',     bg: 'bg-sky-50',      text: 'text-sky-700'     },
+  good:        { label: 'Good',        dot: 'bg-blue-500',    bg: 'bg-blue-50',     text: 'text-blue-700'    },
+  fair:        { label: 'Fair',        dot: 'bg-amber-500',   bg: 'bg-amber-50',    text: 'text-amber-700'   },
+  refurbished: { label: 'Refurbished', dot: 'bg-violet-500',  bg: 'bg-violet-50',   text: 'text-violet-700'  },
 }
 
 const TABS = [
@@ -568,10 +571,10 @@ export default function AdminProductDetailPage() {
                         <p className={`font-bold text-lg ${cond.text}`}>{cond.label}</p>
                         <p className="text-sm text-slate-500 mt-0.5">
                           {product.condition === 'new' && 'Brand new, unused, in original packaging.'}
-                          {product.condition === 'like_new' && 'Used very gently, no visible wear or tear.'}
+                          {product.condition === 'like-new' && 'Used very gently, no visible wear or tear.'}
                           {product.condition === 'good' && 'Minor signs of use but fully functional.'}
                           {product.condition === 'fair' && 'Noticeable wear but works perfectly.'}
-                          {product.condition === 'poor' && 'Heavy wear; functional but cosmetically imperfect.'}
+                          {product.condition === 'refurbished' && 'Professionally refurbished and fully tested.'}
                         </p>
                       </div>
                     </div>
