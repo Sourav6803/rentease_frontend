@@ -15,7 +15,6 @@ import axios from 'axios'
 import { format } from 'date-fns'
 import { Separator } from '../ui/separator'
 import Image from 'next/image'
-import Logo from '../../app/icon.svg'
 
 interface InvoiceModalProps {
   open: boolean
@@ -242,7 +241,7 @@ export function InvoiceModal({ open, onClose, rentalId, rentalNumber, accessToke
                 
                 <div className="flex flex-col items-center">
                     <div className='flex items-center gap-1'>
-                        <Image src={Logo} alt='RentEase Logo' width={24} height={24} />
+                        <Image src="/logo-512.png" alt='RentEase Logo' width={24} height={24} />
                         <h1 className="text-2xl font-black text-gray-900 dark:text-white">
                             RentEase
                         </h1>

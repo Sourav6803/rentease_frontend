@@ -289,6 +289,14 @@ const isPublicPath = (path: string): boolean => {
 
   if (path.includes('/icon.svg')) return true
 
+  if (path.includes('/icon.png')) return true
+
+  if (path.includes('/logo.png')) return true
+
+  if (path.includes('/logo-512.png')) return true
+
+  if (path.includes('/logo-1024.png')) return true
+
   return false
 }
 

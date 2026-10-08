@@ -1,52 +1,82 @@
-
 'use client'
 
-import { useState, useEffect } from 'react'
+// app/(admin)/admin/login/page.tsx
+//
+// Admin console sign-in. Shares the visual language of the customer (/login) and
+// vendor (/vendor/login) screens: brand-token driven, blue gradient showcase
+// panel + shadcn login card, with the shared RoleSelector. Supporting content
+// (trust strip, capability grid, footer) sits below the fold.
+
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { signIn } from 'next-auth/react'
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import * as z from 'zod'
-import { toast } from 'sonner'
-import { motion, AnimatePresence } from 'framer-motion'
+import { z } from 'zod'
 import {
-  Mail, Lock, Eye, EyeOff, Shield,
-  ArrowRight, Smartphone, Users, Package,
-  AlertCircle, Loader2, Clock,
-  ShoppingBag, TrendingUp, CheckCircle2,
-  Zap, HeadphonesIcon, Award,
-  MapPin, Truck, RefreshCcw
+  Mail, Smartphone, Lock, Eye, EyeOff, Loader2, AlertCircle, Shield, ShieldCheck,
+  ArrowRight, Clock, CheckCircle2, Zap, Headphones, Award, Users, Package,
+  TrendingUp, ShoppingBag, Wallet, Activity, Truck, RefreshCcw, MapPin,
 } from 'lucide-react'
 
-const loginSchema = z.object({
-  email: z.string().email('Invalid email address').or(z.literal('')).optional(),
-  phone: z.string().regex(/^[6-9]\d{9}$/, 'Invalid Indian phone number').or(z.literal('')).optional(),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-}).refine((data) => data.email || data.phone, {
-  message: 'Either email or phone is required',
-  path: ['email'],
-})
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import { useToast } from '@/hooks/useToast'
+import { cn } from '@/lib/utils'
+import { DeliveryRouteArt, FloatingRentalTile, RentCycleArt } from '@/components/forms/login/RentalLoginArt'
+import { RoleSelector } from '@/components/forms/login/RoleSelector'
+import { RentEaseLogo } from '@/components/brand/RentEaseLogo'
+import {
+  AuroraBackdrop,
+  CardAura,
+  GRADIENT_CARD_STYLE,
+} from '@/components/forms/login/AuroraBackdrop'
+
+// ── Schema ────────────────────────────────────────────────────────────────────
+const loginSchema = z
+  .object({
+    email: z.string().email('Invalid email address').or(z.literal('')).optional(),
+    phone: z.string().regex(/^[6-9]\d{9}$/, 'Invalid Indian phone number').or(z.literal('')).optional(),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+  })
+  .refine((data) => data.email || data.phone, {
+    message: 'Either email or phone is required',
+    path: ['email'],
+  })
 
 type LoginFormValues = z.infer<typeof loginSchema>
 
+const BRAND_GRADIENT =
+  'bg-[linear-gradient(135deg,var(--brand-gradient-from),var(--brand-gradient-to))]'
+const BRAND_SOFT_SHADOW = 'shadow-[0_16px_40px_-14px_var(--brand)]'
+
+// ── Platform snapshot ─────────────────────────────────────────────────────────
 const adminStats = [
-  { label: 'Active Vendors', value: '2,345', change: '+12.5%', icon: Users, color: '#2874f0' },
-  { label: 'Products Listed', value: '12,456', change: '+23.1%', icon: Package, color: '#ff6161' },
-  { label: 'Monthly Revenue', value: '₹45.2L', change: '+18.7%', icon: TrendingUp, color: '#00b96b' },
-  { label: 'Active Rentals', value: '3,421', change: '+8.3%', icon: ShoppingBag, color: '#ff9f00' },
+  { label: 'Active Vendors', value: '2,345', change: '+12.5%', icon: Users },
+  { label: 'Products Listed', value: '12,456', change: '+23.1%', icon: Package },
+  { label: 'Monthly Revenue', value: '₹45.2L', change: '+18.7%', icon: TrendingUp },
+  { label: 'Active Rentals', value: '3,421', change: '+8.3%', icon: ShoppingBag },
 ]
 
+// ── Why RentEase Admin? ───────────────────────────────────────────────────────
 const highlights = [
   { icon: Zap, title: 'Instant Analytics', desc: 'Real-time platform insights' },
   { icon: Shield, title: 'Secure Access', desc: 'Enterprise-grade protection' },
-  { icon: HeadphonesIcon, title: '24/7 Support', desc: 'Always-on operations team' },
+  { icon: Headphones, title: '24/7 Support', desc: 'Always-on operations team' },
   { icon: Award, title: 'Top Rated', desc: '#1 rental management platform' },
 ]
 
+// ── Trust strip ───────────────────────────────────────────────────────────────
 const trustBadges = [
   { icon: Truck, text: 'Pan-India Coverage' },
   { icon: RefreshCcw, text: 'Real-time Sync' },
   { icon: MapPin, text: '500+ Cities' },
+  { icon: Award, text: 'Trusted by 2,000+ Vendors' },
 ]
 
 const recentActivity = [
@@ -56,27 +86,173 @@ const recentActivity = [
   { text: 'Platform uptime: 99.97%', time: '2h ago', dot: '#00b96b' },
 ]
 
+const securedBadges = [
+  { icon: Shield, label: '256-bit SSL' },
+  { icon: CheckCircle2, label: '2FA Ready' },
+  { icon: Clock, label: 'Auto Logout' },
+]
+
+const glanceStats = [
+  { label: 'Vendors', value: '2.3K+' },
+  { label: 'Cities', value: '500+' },
+  { label: 'Uptime', value: '99.9%' },
+]
+
+// ── Live activity ticker ──────────────────────────────────────────────────────
+function ActivityTicker() {
+  const [idx, setIdx] = useState(0)
+
+  useEffect(() => {
+    const t = setInterval(() => setIdx((i) => (i + 1) % recentActivity.length), 3500)
+    return () => clearInterval(t)
+  }, [])
+
+  const item = recentActivity[idx]
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
+      <div className="mb-2 flex items-center gap-1.5">
+        <Activity className="h-3.5 w-3.5 text-[var(--brand-accent)]" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/80">
+          Live Activity
+        </span>
+      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={idx}
+          initial={{ opacity: 0, x: 14 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -14 }}
+          transition={{ duration: 0.3 }}
+          className="flex items-center gap-2.5"
+        >
+          <span className="relative flex h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.dot }}>
+            <span
+              className="absolute inline-flex h-2 w-2 animate-ping rounded-full opacity-60"
+              style={{ backgroundColor: item.dot }}
+            />
+          </span>
+          <p className="flex-1 truncate text-[12px] text-white/90">{item.text}</p>
+          <span className="shrink-0 text-[10px] text-white/55">{item.time}</span>
+        </motion.div>
+      </AnimatePresence>
+
+      <div className="mt-2.5 flex gap-1.5">
+        {recentActivity.map((_, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setIdx(i)}
+            aria-label={`View activity ${i + 1}`}
+            className={cn(
+              'h-1 rounded-full transition-all',
+              i === idx ? 'w-6 bg-white' : 'w-1.5 bg-white/30 hover:bg-white/50',
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Sticky console header ─────────────────────────────────────────────────────
+function AdminHeader() {
+  return (
+    <header className="sticky top-0 z-50 border-b border-border/60 bg-card/75 backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between gap-4 px-5 sm:px-7">
+        <div className="flex items-center gap-2.5">
+          <RentEaseLogo size={34} withRing />
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-bold tracking-tight text-foreground">RentEase</span>
+            <span className="hidden text-[11px] font-medium text-muted-foreground sm:inline">
+              Admin Console
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <a
+            href="mailto:support@rentease.com"
+            className="hidden items-center gap-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-brand md:flex"
+          >
+            <Headphones className="h-3.5 w-3.5" /> support@rentease.com
+          </a>
+          <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-1.5 w-1.5 animate-ping rounded-full bg-emerald-500 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            </span>
+            <span className="text-[10px] font-bold text-emerald-700">All Systems Operational</span>
+          </div>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+// ── Amber trust strip — sticks directly under the header ─────────────────────
+function TrustStrip() {
+  return (
+    <div className="sticky top-16 z-40 border-b border-amber-200/70 bg-amber-50/85 px-6 py-2.5 backdrop-blur-sm">
+      <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-center gap-x-9 gap-y-2">
+        {trustBadges.map((b) => (
+          <div key={b.text} className="flex items-center gap-1.5">
+            <b.icon className="h-3.5 w-3.5 text-amber-700" />
+            <span className="text-[11px] font-bold text-amber-800">{b.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function AdminLoginPage() {
   const router = useRouter()
+  const toast = useToast()
+
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [activeTab, setActiveTab] = useState<'email' | 'phone'>('email')
   const [mounted, setMounted] = useState(false)
 
-  const { register, handleSubmit, formState: { errors }, setValue, trigger } = useForm<LoginFormValues>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    setValue,
+    watch,
+  } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: '', phone: '', password: '' },
     mode: 'onChange',
     shouldUnregister: false,
   })
 
-  useEffect(() => { setMounted(true) }, [])
-
   useEffect(() => {
-    if (activeTab === 'email') { setValue('phone', ''); trigger('email') }
-    else { setValue('email', ''); trigger('phone') }
-  }, [activeTab, setValue, trigger])
+    setMounted(true)
+  }, [])
+
+  // Switching tab clears the other identifier. We deliberately do NOT force
+  // validation here — doing so showed "Either email or phone is required" the
+  // instant the page loaded, before the user had typed anything.
+  const switchTab = (tab: 'email' | 'phone') => {
+    if (tab === activeTab) return
+    setActiveTab(tab)
+    setValue(tab === 'email' ? 'phone' : 'email', '')
+  }
+
+  const watchEmail = watch('email')
+  const watchPhone = watch('phone')
+  const watchPassword = watch('password')
+
+  // Mirror the other login screens: the CTA lights up only once the form is valid.
+  const canSubmit =
+    !isLoading &&
+    (watchPassword || '').length >= 6 &&
+    (activeTab === 'email'
+      ? /^\S+@\S+\.\S+$/.test(watchEmail || '')
+      : /^[6-9]\d{9}$/.test(watchPhone || ''))
 
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true)
@@ -84,23 +260,28 @@ export default function AdminLoginPage() {
       if (activeTab === 'email' && !data.email) throw new Error('Please enter your email address')
       if (activeTab === 'phone' && !data.phone) throw new Error('Please enter your phone number')
 
-      const credentials: any = {
-        password: data.password, loginType: 'super_admin',
-        redirect: false, callbackUrl: '/admin/dashboard',
+      const credentials: Record<string, string | boolean> = {
+        password: data.password,
+        loginType: 'super_admin',
+        redirect: false,
+        callbackUrl: '/admin/dashboard',
       }
-      if (activeTab === 'email') credentials.email = data.email
-      else credentials.phone = data.phone
+      if (activeTab === 'email') credentials.email = data.email as string
+      else credentials.phone = data.phone as string
 
       const result = await signIn('credentials', credentials)
-      if (result?.error) throw new Error(result.error === 'CredentialsSignin' ? 'Invalid credentials' : result.error)
+      if (result?.error) {
+        throw new Error(result.error === 'CredentialsSignin' ? 'Invalid credentials' : result.error)
+      }
       if (!result?.ok) throw new Error('Login failed. Please try again.')
 
-      toast.success('Login successful!', { description: 'Redirecting to dashboard...' })
+      toast.success('Login successful!', { description: 'Redirecting to dashboard…' })
       if (rememberMe) localStorage.setItem('admin_remember_me', 'true')
       else localStorage.removeItem('admin_remember_me')
       router.replace('/admin/dashboard')
-    } catch (error: any) {
-      toast.error('Login failed', { description: error.message || 'Invalid credentials.' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid credentials.'
+      toast.error('Login failed', { description: message })
     } finally {
       setIsLoading(false)
     }
@@ -109,521 +290,480 @@ export default function AdminLoginPage() {
   if (!mounted) return null
 
   return (
-    <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", background: '#eef2fb', minHeight: '100vh' }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Nunito:wght@700;800;900&display=swap');
+    <MotionConfig reducedMotion="user">
+      <div className="relative bg-background">
+        {/* Colourful wash spans the header + hero screenful */}
+        <AuroraBackdrop className="h-screen" />
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        <AdminHeader />
+        <TrustStrip />
 
-        .left-panel {
-          background: linear-gradient(160deg, #2874f0 0%, #1a5dc8 55%, #0f3d9e 100%);
-          border-radius: 20px;
-          padding: 40px;
-          position: relative;
-          overflow: hidden;
-          display: flex;
-          flex-direction: column;
-          gap: 28px;
-        }
-        .left-panel::before {
-          content: '';
-          position: absolute;
-          top: -100px; right: -80px;
-          width: 340px; height: 340px;
-          background: rgba(255,255,255,0.06);
-          border-radius: 50%;
-        }
-        .left-panel::after {
-          content: '';
-          position: absolute;
-          bottom: -130px; left: -70px;
-          width: 420px; height: 420px;
-          background: rgba(255,255,255,0.04);
-          border-radius: 50%;
-        }
-        .dots-bg {
-          background-image: radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px);
-          background-size: 22px 22px;
-          position: absolute;
-          inset: 0;
-          border-radius: 20px;
-        }
+        {/* ══ HERO — admin panel + login card ════════════════════════════════ */}
+        <section className="relative overflow-hidden">
+          <div className="relative mx-auto flex min-h-[calc(100vh-6.5rem)] w-full items-center justify-center px-4 py-6 sm:px-6 lg:px-8">
+            <div className="grid w-full max-w-[1400px] items-stretch gap-6 lg:grid-cols-2 lg:gap-7">
+              {/* ── LEFT — admin brand panel ── */}
+              <motion.div
+                initial={{ opacity: 0, x: -24 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5 }}
+                className={cn(
+                  'relative hidden overflow-hidden rounded-[2rem] p-6 text-white lg:flex lg:flex-col',
+                  BRAND_GRADIENT,
+                  BRAND_SOFT_SHADOW,
+                )}
+              >
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-[0.13]"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(rgba(255,255,255,.7) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.7) 1px, transparent 1px)',
+                    backgroundSize: '38px 38px',
+                  }}
+                />
+                <div className="pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full bg-white/15 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-24 -left-16 h-72 w-72 rounded-full bg-black/10 blur-3xl" />
 
-        .stat-card {
-          background: rgba(255,255,255,0.1);
-          border: 1px solid rgba(255,255,255,0.18);
-          border-radius: 14px;
-          padding: 16px;
-          transition: all 0.2s ease;
-          cursor: default;
-        }
-        .stat-card:hover {
-          background: rgba(255,255,255,0.17);
-          transform: translateY(-2px);
-          box-shadow: 0 8px 20px rgba(0,0,0,0.12);
-        }
-
-        .highlight-item {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px;
-          border-radius: 10px;
-          transition: background 0.2s;
-          cursor: default;
-        }
-        .highlight-item:hover { background: rgba(255,255,255,0.08); }
-
-        .form-card {
-          background: #ffffff;
-          border-radius: 16px;
-          padding: 36px 30px;
-          box-shadow: 0 4px 32px rgba(40,116,240,0.1), 0 1px 4px rgba(0,0,0,0.05);
-          border: 1px solid rgba(40,116,240,0.1);
-        }
-
-        .tab-row { display: grid; grid-template-columns: 1fr 1fr; background: #f0f4ff; border-radius: 9px; padding: 3px; gap: 3px; }
-        .tab-btn {
-          padding: 9px 12px;
-          border-radius: 7px;
-          border: none;
-          cursor: pointer;
-          font-size: 13px;
-          font-weight: 600;
-          font-family: 'Plus Jakarta Sans', sans-serif;
-          transition: all 0.2s;
-          color: #64748b;
-          background: transparent;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-        }
-        .tab-btn.active {
-          background: #ffffff;
-          color: #2874f0;
-          box-shadow: 0 1px 6px rgba(40,116,240,0.18);
-        }
-        .tab-btn:hover:not(.active) { color: #2874f0; background: rgba(255,255,255,0.6); }
-
-        .field-wrap { display: flex; flex-direction: column; gap: 6px; }
-        .field-label { font-size: 11.5px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.07em; }
-        .field-input {
-          width: 100%;
-          padding: 11px 14px 11px 40px;
-          border-radius: 8px;
-          font-size: 13.5px;
-          font-family: 'Plus Jakarta Sans', sans-serif;
-          color: #1e293b;
-          outline: none;
-          transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
-          background: #f8faff;
-          border: 1.5px solid #dde3ef;
-        }
-        .field-input::placeholder { color: #b0b9cc; }
-        .field-input:focus {
-          border-color: #2874f0;
-          box-shadow: 0 0 0 3px rgba(40,116,240,0.1);
-          background: #fff;
-        }
-        .field-input.has-error { border-color: #ef4444; background: #fff5f5; }
-        .field-input.has-error:focus { box-shadow: 0 0 0 3px rgba(239,68,68,0.1); }
-        .field-error { font-size: 11px; color: #ef4444; display: flex; align-items: center; gap: 4px; }
-
-        .submit-btn {
-          width: 100%; padding: 13.5px;
-          border-radius: 9px; border: none; cursor: pointer;
-          font-size: 14px; font-weight: 700;
-          font-family: 'Plus Jakarta Sans', sans-serif;
-          letter-spacing: 0.02em;
-          color: white;
-          background: linear-gradient(135deg, #2874f0 0%, #1755cc 100%);
-          transition: all 0.2s;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-          box-shadow: 0 4px 16px rgba(40,116,240,0.3);
-        }
-        .submit-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #1755cc 0%, #0f3fa8 100%);
-          box-shadow: 0 6px 22px rgba(40,116,240,0.4);
-          transform: translateY(-1px);
-        }
-        .submit-btn:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
-
-        .top-nav {
-          background: #2874f0;
-          box-shadow: 0 2px 10px rgba(40,116,240,0.3);
-        }
-        .trust-strip {
-          background: linear-gradient(90deg, #fffbeb, #fef3c7, #fffbeb);
-          border-bottom: 1px solid #fcd34d;
-        }
-        .footer-bar {
-          background: #fff;
-          border-top: 1px solid #e2e8f0;
-        }
-
-        .divider { height: 1px; background: linear-gradient(90deg, transparent, #dde3ef, transparent); margin: 6px 0; }
-
-        .mini-stat { background: #f0f4ff; border-radius: 10px; padding: 12px; text-align: center; }
-
-        .link-hover { transition: color 0.15s; }
-        .link-hover:hover { color: #2874f0 !important; }
-
-        @keyframes liveDot {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(0.8); }
-        }
-        .live-dot { animation: liveDot 2s ease-in-out infinite; }
-
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .spin { animation: spin 1s linear infinite; }
-
-        @media (max-width: 1024px) {
-          .left-panel { display: none; }
-          .main-grid { grid-template-columns: 1fr !important; max-width: 440px !important; }
-        }
-      `}</style>
-
-      {/* TOP NAV */}
-      <nav className="top-nav">
-        <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '0 28px', height: '58px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '34px', height: '34px', background: 'rgba(255,255,255,0.18)', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Shield size={17} color="white" strokeWidth={2.5} />
-            </div>
-            <div>
-              <span style={{ color: 'white', fontWeight: 900, fontSize: '18px', fontFamily: 'Nunito, sans-serif', letterSpacing: '-0.3px' }}>RentEase</span>
-              <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: '11px', marginLeft: '7px', fontWeight: 500 }}>Admin Console</span>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="live-dot" style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
-            <span style={{ color: '#a7f3d0', fontSize: '12px', fontWeight: 600 }}>All Systems Operational</span>
-          </div>
-        </div>
-      </nav>
-
-      {/* TRUST STRIP */}
-      <div className="trust-strip" style={{ padding: '7px 28px' }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '36px', flexWrap: 'wrap' }}>
-          {[...trustBadges, { icon: Award, text: 'Trusted by 2,000+ Vendors' }].map((b) => (
-            <div key={b.text} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <b.icon size={12} color="#92400e" />
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#92400e' }}>{b.text}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* MAIN */}
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '36px 28px 44px', display: 'flex', alignItems: 'center', minHeight: 'calc(100vh - 104px)' }}>
-        <div className="main-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 420px', gap: '28px', width: '100%', alignItems: 'stretch' }}>
-
-          {/* LEFT */}
-          <motion.div
-            className="left-panel"
-            initial={{ opacity: 0, x: -22 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <div className="dots-bg" />
-
-            {/* Hero */}
-            <div style={{ position: 'relative', zIndex: 1 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '20px', padding: '4px 12px', marginBottom: '18px' }}>
-                <Award size={11} color="#fbbf24" />
-                <span style={{ fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>India's #1 Rental Platform</span>
-              </div>
-              <h1 style={{ fontFamily: 'Nunito, sans-serif', fontWeight: 900, fontSize: '34px', color: 'white', lineHeight: 1.18, marginBottom: '14px', letterSpacing: '-0.4px' }}>
-                Power your rental<br />
-                <span style={{ color: '#fde68a' }}>business forward.</span>
-              </h1>
-              <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '13.5px', lineHeight: 1.7, maxWidth: '380px', fontWeight: 400 }}>
-                Complete control over vendors, inventory, payments, and analytics — all in one intelligent dashboard built for scale.
-              </p>
-            </div>
-
-            {/* Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', position: 'relative', zIndex: 1 }}>
-              {adminStats.map((stat, i) => (
-                <motion.div
-                  key={stat.label}
-                  className="stat-card"
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 + i * 0.07 }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                    <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <stat.icon size={14} color="white" />
+                <div className="relative z-10 space-y-2.5">
+                  <div className="flex items-center gap-3">
+                    <RentEaseLogo size={44} withRing />
+                    <div>
+                      <p className="text-lg font-bold leading-none">RentEase</p>
+                      <p className="text-xs text-white/70">Admin Console</p>
                     </div>
-                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#86efac', background: 'rgba(134,239,172,0.15)', padding: '2px 8px', borderRadius: '20px' }}>
-                      {stat.change}
-                    </span>
                   </div>
-                  <p style={{ fontSize: '21px', fontWeight: 900, color: 'white', fontFamily: 'Nunito, sans-serif' }}>{stat.value}</p>
-                  <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '3px' }}>{stat.label}</p>
-                </motion.div>
-              ))}
+
+                  <div className="space-y-2.5">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-white ring-1 ring-white/20">
+                      <Award className="h-3 w-3 text-[var(--brand-accent)]" />
+                      India&apos;s #1 Rental Platform
+                    </span>
+                    <h1 className="text-[1.75rem] font-bold leading-[1.15]">
+                      Power your rental
+                      <br />
+                      <span className="text-[var(--brand-accent)]">business forward.</span>
+                    </h1>
+                    <p className="max-w-sm text-sm text-white/75">
+                      Complete control over vendors, inventory, payments, and analytics — all in one
+                      intelligent dashboard built for scale.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {highlights.map((h, index) => (
+                      <motion.span
+                        key={h.title}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.15 + index * 0.07 }}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-white/12 px-3 py-1 text-[11px] font-medium text-white ring-1 ring-white/20"
+                      >
+                        <h.icon className="h-3.5 w-3.5" />
+                        {h.title}
+                      </motion.span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="relative z-10 my-4 flex min-h-0 flex-1 items-center justify-center">
+                  <div className="relative h-[12.5rem] w-full max-w-[24rem]">
+                    <div className="pointer-events-none absolute left-1/2 top-1/2 h-[128%] w-[128%] -translate-x-1/2 -translate-y-1/2">
+                      <RentCycleArt />
+                    </div>
+
+                    <div className="relative h-full w-full overflow-hidden rounded-3xl ring-1 ring-white/25 shadow-2xl shadow-black/25">
+                      <Image
+                        src="/images/admin-login-hero.png"
+                        alt="An administrator managing the RentEase platform dashboard"
+                        fill
+                        priority
+                        sizes="(min-width: 1024px) 46vw, 100vw"
+                        className="object-cover"
+                      />
+                      <div className={cn('absolute inset-x-0 top-0 h-1', BRAND_GRADIENT)} />
+                    </div>
+
+                    <FloatingRentalTile icon={Users} label="Vendors" delay={0.3} className="-left-5 top-7" />
+                    <FloatingRentalTile icon={Package} compact delay={0.6} className="-right-4 top-3" />
+                    <FloatingRentalTile icon={Wallet} label="Payouts" delay={0.9} float={11} className="-right-6 bottom-8" />
+                    <FloatingRentalTile icon={ShieldCheck} compact delay={1.2} className="-left-4 bottom-5" />
+                  </div>
+                </div>
+
+                <div className="relative z-10 space-y-2.5">
+                  <div className="grid grid-cols-4 gap-2 border-t border-white/15 pt-3.5">
+                    {adminStats.map((stat, index) => (
+                      <motion.div
+                        key={stat.label}
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 + index * 0.1 }}
+                        className="flex flex-col items-center text-center"
+                      >
+                        <div className="mb-1 flex items-center gap-1">
+                          <stat.icon className="h-3.5 w-3.5 text-white/60" />
+                          <span className="rounded-full bg-emerald-400/15 px-1.5 py-px text-[9px] font-bold text-emerald-200">
+                            {stat.change}
+                          </span>
+                        </div>
+                        <p className="text-base font-bold tabular-nums text-white">{stat.value}</p>
+                        <p className="mt-0.5 text-[10px] font-medium text-white/70">{stat.label}</p>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  <ActivityTicker />
+
+                  <DeliveryRouteArt className="opacity-70" />
+                </div>
+              </motion.div>
+
+              {/* ── RIGHT — admin login card ── */}
+              <motion.div
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.15 }}
+                className="relative mx-auto flex w-full min-w-0 max-w-md flex-col lg:mx-0 lg:max-w-none"
+              >
+                <div className="mb-4 lg:hidden">
+                  <div className="relative aspect-[16/9] w-full overflow-hidden rounded-2xl ring-1 ring-border">
+                    <Image
+                      src="/images/admin-login-hero.png"
+                      alt="An administrator managing the RentEase platform dashboard"
+                      fill
+                      sizes="100vw"
+                      className="object-cover"
+                    />
+                  </div>
+                </div>
+
+                <CardAura />
+                <Card className="relative flex flex-1 flex-col overflow-hidden rounded-2xl" style={GRADIENT_CARD_STYLE}>
+
+                  <CardHeader className="space-y-2 pb-4">
+                    <CardTitle className="text-center text-2xl lg:text-left">Admin Sign In</CardTitle>
+                    <CardDescription className="text-center lg:text-left">
+                      Secure · Encrypted · Role-based access
+                    </CardDescription>
+                  </CardHeader>
+
+                  <CardContent className="flex flex-1 flex-col justify-center">
+                    <p className="mb-5 text-center text-xs text-muted-foreground lg:text-left">
+                      Enter your credentials to access the RentEase management console.
+                    </p>
+
+                    <RoleSelector active="admin" />
+
+                    {/* Email / Phone toggle */}
+                    <div className="relative mb-6 grid grid-cols-2 rounded-xl bg-muted p-1">
+                      <motion.div
+                        className="absolute inset-y-1 w-[calc(50%-4px)] rounded-lg bg-card shadow-sm"
+                        animate={{ x: activeTab === 'email' ? 4 : 'calc(100% + 4px)' }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                      />
+                      {(['email', 'phone'] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => switchTab(tab)}
+                          aria-pressed={activeTab === tab}
+                          className={cn(
+                            'relative z-10 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                            activeTab === tab
+                              ? 'text-brand'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          {tab === 'email' ? (
+                            <Mail className="mr-2 inline-block h-4 w-4" />
+                          ) : (
+                            <Smartphone className="mr-2 inline-block h-4 w-4" />
+                          )}
+                          {tab === 'email' ? 'Email' : 'Phone'}
+                        </button>
+                      ))}
+                    </div>
+
+                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+                      <div className="space-y-2">
+                        <Label htmlFor="admin-identifier" className="text-foreground">
+                          {activeTab === 'email' ? 'Email Address' : 'Phone Number'}
+                        </Label>
+                        <AnimatePresence mode="wait">
+                          {activeTab === 'email' ? (
+                            <motion.div
+                              key="admin-email"
+                              initial={{ opacity: 0, x: -8 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: 8 }}
+                              transition={{ duration: 0.15 }}
+                              className="relative"
+                            >
+                              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              <Input
+                                id="admin-identifier"
+                                type="email"
+                                placeholder="admin@rentease.com"
+                                className={cn(
+                                  'pl-10 transition-shadow focus-visible:ring-brand',
+                                  errors.email && 'border-red-400 focus-visible:ring-red-300',
+                                )}
+                                autoComplete="email"
+                                disabled={isLoading}
+                                {...register('email')}
+                              />
+                            </motion.div>
+                          ) : (
+                            <motion.div
+                              key="admin-phone"
+                              initial={{ opacity: 0, x: -8 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: 8 }}
+                              transition={{ duration: 0.15 }}
+                              className="relative"
+                            >
+                              <span className="absolute left-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 text-muted-foreground">
+                                <Smartphone className="h-4 w-4" />
+                                <span className="text-xs font-bold">+91</span>
+                                <span className="h-3 w-px bg-border" />
+                              </span>
+                              <Input
+                                id="admin-identifier"
+                                type="tel"
+                                placeholder="9876543210"
+                                className={cn(
+                                  'pl-[4.5rem] transition-shadow focus-visible:ring-brand',
+                                  errors.phone && 'border-red-400 focus-visible:ring-red-300',
+                                )}
+                                autoComplete="tel"
+                                disabled={isLoading}
+                                {...register('phone')}
+                              />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                        {(errors.email || errors.phone) && (
+                          <p className="flex items-center gap-1 text-[11px] text-red-500">
+                            <AlertCircle className="h-3 w-3" />
+                            {activeTab === 'email' ? errors.email?.message : errors.phone?.message}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="admin-password" className="text-foreground">
+                            Password
+                          </Label>
+                          <a
+                            href="/admin/forgot-password"
+                            className="text-[11px] font-semibold text-brand hover:underline"
+                          >
+                            Forgot?
+                          </a>
+                        </div>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="admin-password"
+                            type={showPassword ? 'text' : 'password'}
+                            placeholder="Enter your password"
+                            className={cn(
+                              'pl-10 pr-10 transition-shadow focus-visible:ring-brand',
+                              errors.password && 'border-red-400 focus-visible:ring-red-300',
+                            )}
+                            autoComplete="current-password"
+                            disabled={isLoading}
+                            {...register('password')}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword((v) => !v)}
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                        {errors.password && (
+                          <p className="flex items-center gap-1 text-[11px] text-red-500">
+                            <AlertCircle className="h-3 w-3" />
+                            {errors.password.message}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="admin-remember"
+                          checked={rememberMe}
+                          onCheckedChange={(v) => setRememberMe(v as boolean)}
+                          disabled={isLoading}
+                          className="border-border data-[state=checked]:border-brand data-[state=checked]:bg-brand"
+                        />
+                        <label
+                          htmlFor="admin-remember"
+                          className="cursor-pointer select-none text-sm text-muted-foreground"
+                        >
+                          Keep me signed in for 30 days
+                        </label>
+                      </div>
+
+                      <Button
+                        type="submit"
+                        disabled={!canSubmit}
+                        className={cn(
+                          'group w-full text-white transition-all hover:opacity-90 disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 disabled:shadow-none',
+                          BRAND_GRADIENT,
+                          BRAND_SOFT_SHADOW,
+                        )}
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Authenticating…
+                          </>
+                        ) : (
+                          <>
+                            <Shield className="mr-2 h-4 w-4" />
+                            Sign in to Dashboard
+                            <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                          </>
+                        )}
+                      </Button>
+
+                      <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-border" />
+                        </div>
+                        <div className="relative flex justify-center">
+                          <span className="bg-card px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                            Secured
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap justify-center gap-4">
+                        {securedBadges.map((b) => (
+                          <div key={b.label} className="flex items-center gap-1.5">
+                            <b.icon className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-[10px] font-semibold text-muted-foreground">
+                              {b.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </form>
+
+                    <div className="mt-5 rounded-2xl border border-border bg-muted/40 p-3">
+                      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                        Platform at a Glance
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {glanceStats.map((s) => (
+                          <div
+                            key={s.label}
+                            className="rounded-xl border border-brand/15 bg-brand-soft px-2 py-2 text-center"
+                          >
+                            <p className="text-base font-extrabold text-brand">{s.value}</p>
+                            <p className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+                              {s.label}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </div>
+          </div>
+        </section>
+
+        {/* ══ WHY RENTEASE ADMIN? ═════════════════════════════════════════════ */}
+        <section className="px-6 py-12">
+          <div className="mx-auto max-w-[1100px]">
+            <div className="mb-8 text-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-soft px-3 py-1 text-xs font-bold uppercase tracking-wider text-brand">
+                <ShieldCheck className="h-3 w-3" /> Console
+              </span>
+              <h2 className="mt-3 text-2xl font-extrabold text-foreground lg:text-3xl">
+                Why RentEase Admin?
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Built for teams running a nationwide rental operation — with the controls to match.
+              </p>
             </div>
 
-            {/* Highlights */}
-            <div style={{ position: 'relative', zIndex: 1 }}>
-              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '10px' }}>
-                Why RentEase Admin?
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-                {highlights.map((h, i) => (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {highlights.map((h, i) => {
+                const Icon = h.icon
+                return (
                   <motion.div
                     key={h.title}
-                    className="highlight-item"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.38 + i * 0.06 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.07, duration: 0.45 }}
+                    className="group rounded-2xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-brand/50 hover:shadow-lg"
                   >
-                    <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <h.icon size={13} color="rgba(255,255,255,0.85)" />
+                    <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-soft text-brand transition-colors group-hover:bg-brand group-hover:text-white">
+                      <Icon className="h-5 w-5" />
                     </div>
-                    <div>
-                      <p style={{ fontSize: '12px', fontWeight: 700, color: 'white' }}>{h.title}</p>
-                      <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', marginTop: '1px' }}>{h.desc}</p>
-                    </div>
+                    <h3 className="text-base font-bold text-foreground">{h.title}</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{h.desc}</p>
                   </motion.div>
-                ))}
+                )
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* ══ FOOTER ══════════════════════════════════════════════════════════ */}
+        <footer className="border-t border-border bg-card px-6 py-6">
+          <div className="mx-auto flex max-w-[1100px] flex-col items-center justify-between gap-4 sm:flex-row">
+            <div className="flex items-center gap-2">
+              <RentEaseLogo size={28} />
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-foreground">RentEase</span>
+                <span className="text-[10px] text-muted-foreground">
+                  © 2025 RentEase Technologies Pvt. Ltd.
+                </span>
               </div>
             </div>
 
-            {/* Activity Feed */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.55 }}
-              style={{ background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '18px', position: 'relative', zIndex: 1 }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Live Activity</span>
-                <span className="live-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {recentActivity.map((item, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: item.dot, boxShadow: `0 0 5px ${item.dot}`, flexShrink: 0 }} />
-                    <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.72)', flex: 1 }}>{item.text}</span>
-                    <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', whiteSpace: 'nowrap' }}>{item.time}</span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-
-          {/* RIGHT — Login Form */}
-          <motion.div
-            initial={{ opacity: 0, x: 22 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
-          >
-            <div className="form-card">
-              {/* Header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '22px' }}>
-                <div style={{ width: '42px', height: '42px', borderRadius: '11px', background: 'linear-gradient(135deg, #2874f0, #1755cc)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(40,116,240,0.3)', flexShrink: 0 }}>
-                  <Shield size={19} color="white" strokeWidth={2.5} />
-                </div>
-                <div>
-                  <h2 style={{ fontFamily: 'Nunito, sans-serif', fontWeight: 900, fontSize: '20px', color: '#1e293b', lineHeight: 1 }}>Admin Sign In</h2>
-                  <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '3px', fontWeight: 500 }}>Secure · Encrypted · Role-based access</p>
-                </div>
-              </div>
-
-              <div className="divider" />
-              <p style={{ fontSize: '12.5px', color: '#64748b', margin: '10px 0 20px', lineHeight: 1.55 }}>
-                Enter your credentials to access the RentEase management console.
-              </p>
-
-              {/* Tabs */}
-              <div className="tab-row" style={{ marginBottom: '20px' }}>
-                {(['email', 'phone'] as const).map((tab) => (
-                  <button key={tab} className={`tab-btn ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>
-                    {tab === 'email' ? <Mail size={13} /> : <Smartphone size={13} />}
-                    {tab === 'email' ? 'Email' : 'Phone'}
-                  </button>
-                ))}
-              </div>
-
-              <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {/* Identifier */}
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeTab}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -5 }}
-                    transition={{ duration: 0.18 }}
-                    className="field-wrap"
-                  >
-                    <label className="field-label">{activeTab === 'email' ? 'Email Address' : 'Phone Number'}</label>
-                    <div style={{ position: 'relative' }}>
-                      {activeTab === 'email' ? (
-                        <>
-                          <Mail size={14} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
-                          <input
-                            type="email"
-                            placeholder="admin@rentease.com"
-                            className={`field-input ${errors.email ? 'has-error' : ''}`}
-                            {...register('email')}
-                            disabled={isLoading}
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: '5px', pointerEvents: 'none' }}>
-                            <Smartphone size={13} color="#94a3b8" />
-                            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>+91</span>
-                            <span style={{ width: '1px', height: '12px', background: '#dde3ef' }} />
-                          </div>
-                          <input
-                            type="tel"
-                            placeholder="9876543210"
-                            className={`field-input ${errors.phone ? 'has-error' : ''}`}
-                            style={{ paddingLeft: '66px' }}
-                            {...register('phone')}
-                            disabled={isLoading}
-                          />
-                        </>
-                      )}
-                    </div>
-                    {(errors.email || errors.phone) && (
-                      <p className="field-error">
-                        <AlertCircle size={11} />
-                        {activeTab === 'email' ? errors.email?.message : errors.phone?.message}
-                      </p>
-                    )}
-                  </motion.div>
-                </AnimatePresence>
-
-                {/* Password */}
-                <div className="field-wrap">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <label className="field-label">Password</label>
-                    <a href="/admin/forgot-password"
-                      style={{ fontSize: '12px', color: '#2874f0', fontWeight: 600, textDecoration: 'none' }}
-                      onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
-                      onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}>
-                      Forgot?
-                    </a>
-                  </div>
-                  <div style={{ position: 'relative' }}>
-                    <Lock size={14} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="Enter your password"
-                      className={`field-input ${errors.password ? 'has-error' : ''}`}
-                      style={{ paddingRight: '44px' }}
-                      {...register('password')}
-                      disabled={isLoading}
-                    />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)}
-                      style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px', display: 'flex', alignItems: 'center' }}>
-                      {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                  </div>
-                  {errors.password && (
-                    <p className="field-error"><AlertCircle size={11} /> {errors.password.message}</p>
-                  )}
-                </div>
-
-                {/* Remember */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div
-                    onClick={() => setRememberMe(!rememberMe)}
-                    style={{
-                      width: '17px', height: '17px', borderRadius: '4px', cursor: 'pointer', flexShrink: 0,
-                      background: rememberMe ? '#2874f0' : '#f8faff',
-                      border: rememberMe ? '1.5px solid #2874f0' : '1.5px solid #c8d4e8',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
-                    }}
-                  >
-                    {rememberMe && <CheckCircle2 size={10} color="white" strokeWidth={3} />}
-                  </div>
-                  <span onClick={() => setRememberMe(!rememberMe)}
-                    style={{ fontSize: '12.5px', color: '#64748b', cursor: 'pointer', userSelect: 'none', fontWeight: 500 }}>
-                    Keep me signed in for 30 days
-                  </span>
-                </div>
-
-                {/* Submit */}
-                <button type="submit" disabled={isLoading} className="submit-btn" style={{ marginTop: '2px' }}>
-                  {isLoading
-                    ? <><Loader2 size={15} className="spin" /> Authenticating...</>
-                    : <>Sign in to Dashboard <ArrowRight size={15} /></>}
-                </button>
-
-                {/* Security */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0' }}>
-                  <div style={{ flex: 1, height: '1px', background: '#e8edf5' }} />
-                  <span style={{ padding: '0 12px', fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Secured</span>
-                  <div style={{ flex: 1, height: '1px', background: '#e8edf5' }} />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '24px' }}>
-                  {[
-                    { icon: Shield, label: '256-bit SSL' },
-                    { icon: CheckCircle2, label: '2FA Ready' },
-                    { icon: Clock, label: 'Auto Logout' },
-                  ].map((b) => (
-                    <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <b.icon size={12} color="#94a3b8" />
-                      <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{b.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </form>
-            </div>
-
-            {/* Mini stats */}
-            <div style={{ background: 'white', borderRadius: '14px', padding: '16px 18px', boxShadow: '0 2px 12px rgba(40,116,240,0.07)', border: '1px solid rgba(40,116,240,0.08)' }}>
-              <p style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>Platform at a Glance</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                {[
-                  { label: 'Vendors', value: '2.3K+', color: '#2874f0' },
-                  { label: 'Cities', value: '500+', color: '#ff9f00' },
-                  { label: 'Uptime', value: '99.9%', color: '#00b96b' },
-                ].map((s) => (
-                  <div key={s.label} className="mini-stat">
-                    <p style={{ fontSize: '16px', fontWeight: 900, color: s.color, fontFamily: 'Nunito, sans-serif' }}>{s.value}</p>
-                    <p style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '2px' }}>{s.label}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <p style={{ textAlign: 'center', fontSize: '11px', color: '#94a3b8' }}>
-              Need help?{' '}
-              <a href="mailto:support@rentease.com" className="link-hover"
-                style={{ color: '#2874f0', fontWeight: 600, textDecoration: 'none' }}>
+            <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+              {[
+                ['Terms', '/terms'],
+                ['Privacy', '/privacy'],
+                ['Security', '/security'],
+                ['Status', '/status'],
+              ].map(([label, href]) => (
+                <a
+                  key={label}
+                  href={href}
+                  className="text-[11px] font-semibold text-muted-foreground transition-colors hover:text-brand"
+                >
+                  {label}
+                </a>
+              ))}
+              <a
+                href="mailto:support@rentease.com"
+                className="text-[11px] font-semibold text-brand hover:underline"
+              >
                 support@rentease.com
               </a>
-              {' '}·{' '}
-              <a href="#" className="link-hover" style={{ color: '#94a3b8', textDecoration: 'none' }}>Privacy Policy</a>
-            </p>
-          </motion.div>
-        </div>
-      </div>
+            </div>
 
-      {/* FOOTER */}
-      <div className="footer-bar" style={{ padding: '13px 28px' }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '11px', color: '#94a3b8' }}>© 2025 RentEase Technologies Pvt. Ltd. All rights reserved.</span>
-          <div style={{ display: 'flex', gap: '18px' }}>
-            {['Terms', 'Privacy', 'Security', 'Status'].map((link) => (
-              <a key={link} href="#" className="link-hover"
-                style={{ fontSize: '11px', color: '#94a3b8', textDecoration: 'none', fontWeight: 600 }}>
-                {link}
-              </a>
-            ))}
+            <div className="flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1.5">
+              <ShieldCheck className="h-3 w-3 text-brand" />
+              <span className="text-[10px] font-bold text-muted-foreground">
+                PCI-DSS L1 · ISO 27001
+              </span>
+            </div>
           </div>
-        </div>
+        </footer>
       </div>
-    </div>
+    </MotionConfig>
   )
 }

@@ -421,7 +421,7 @@ export default function Loading() {
               {/* <span>🏷️</span> */}
               <span>
                 <Image
-                  src="/icon.svg"
+                  src="/logo-512.png"
                   alt="Loading"
                   width={80}
                   height={80}

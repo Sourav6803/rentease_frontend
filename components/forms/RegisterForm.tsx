@@ -4,16 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useMemo, useState } from 'react'
 import { motion, type Variants } from 'framer-motion'
-import {
-  Eye,
-  EyeOff,
-  Loader2,
-  Lock,
-  Mail,
-  Phone,
-  ShieldCheck,
-  Sofa,
-} from 'lucide-react'
+import { Eye, EyeOff, Loader2, Lock, Mail, Phone, ShieldCheck } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -24,7 +15,7 @@ import { authApi } from '@/lib/api/auth'
 
 // Shared design tokens (matches RentEase Flipkart-style light-mode system)
 const PRIMARY_BTN =
-  'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+  'bg-[linear-gradient(135deg,var(--brand-gradient-from),var(--brand-gradient-to))] hover:opacity-90'
 
 const formVariants: Variants = {
   hidden: { opacity: 0, y: 16 },
@@ -62,7 +53,7 @@ function PasswordStrength({ password }: { password: string }) {
           <span
             key={i}
             className={`h-1 flex-1 rounded-full transition-colors duration-300 ${
-              i < score ? colors[score - 1] : 'bg-slate-200'
+              i < score ? colors[score - 1] : 'bg-muted'
             }`}
           />
         ))}
@@ -142,17 +133,14 @@ export function RegisterForm() {
       variants={formVariants}
       initial="hidden"
       animate="show"
-      className="w-full max-w-md rounded-3xl border border-slate-200/70 bg-white p-7 shadow-xl shadow-slate-900/5 sm:p-9"
+      className="form-scope relative flex w-full flex-1 flex-col justify-center rounded-3xl border border-border bg-card p-7 shadow-xl shadow-black/5 sm:p-9 lg:max-w-none"
     >
       <motion.div variants={fieldVariants} className="mb-7 flex items-start justify-between">
         <div className="space-y-1.5">
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900">Create your account</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">Create your account</h2>
           <p className="text-sm text-muted-foreground">
             Join RentEase to rent furniture &amp; appliances on flexible monthly plans.
           </p>
-        </div>
-        <div className={`hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl sm:flex ${PRIMARY_BTN}`}>
-          <Sofa className="h-5 w-5 text-white" strokeWidth={2} />
         </div>
       </motion.div>
 
@@ -185,7 +173,7 @@ export function RegisterForm() {
         <motion.div variants={fieldVariants} className="space-y-1.5">
           <Label htmlFor="email">Email</Label>
           <div className="relative">
-            <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="email"
               type="email"
@@ -202,8 +190,8 @@ export function RegisterForm() {
         <motion.div variants={fieldVariants} className="space-y-1.5">
           <Label htmlFor="phone">Phone</Label>
           <div className="relative">
-            <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <span className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+            <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <span className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
               +91
             </span>
             <Input
@@ -222,7 +210,7 @@ export function RegisterForm() {
         <motion.div variants={fieldVariants} className="space-y-1.5">
           <Label htmlFor="password">Password</Label>
           <div className="relative">
-            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="password"
               type={showPassword ? 'text' : 'password'}
@@ -236,7 +224,7 @@ export function RegisterForm() {
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-slate-600"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -248,7 +236,7 @@ export function RegisterForm() {
         <motion.div variants={fieldVariants} className="space-y-1.5">
           <Label htmlFor="confirmPassword">Confirm password</Label>
           <div className="relative">
-            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="confirmPassword"
               type={showConfirm ? 'text' : 'password'}
@@ -262,7 +250,7 @@ export function RegisterForm() {
             <button
               type="button"
               onClick={() => setShowConfirm((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-slate-600"
               aria-label={showConfirm ? 'Hide password' : 'Show password'}
             >
               {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -280,15 +268,28 @@ export function RegisterForm() {
             onCheckedChange={(v) => setAgreedToTerms(v === true)}
             className="mt-0.5"
           />
-          <Label htmlFor="terms" className="text-xs font-normal leading-relaxed text-muted-foreground">
-            I agree to RentEase&apos;s{' '}
-            <Link href="/terms" className="text-blue-600 underline-offset-2 hover:underline">
-              Terms of Service
-            </Link>{' '}
-            and{' '}
-            <Link href="/privacy" className="text-blue-600 underline-offset-2 hover:underline">
-              Privacy Policy
-            </Link>
+          <Label
+            htmlFor="terms"
+            className="flex min-w-0 flex-col gap-2 text-xs font-normal leading-relaxed text-muted-foreground"
+          >
+            <span>I agree to RentEase&apos;s</span>
+
+            {/* Separate chips so the two policy names keep their own tap
+                targets and can never wrap mid-phrase on a narrow screen. */}
+            <span className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/terms"
+                className="inline-flex items-center whitespace-nowrap rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 text-[11px] font-semibold text-brand transition-colors hover:border-brand/40 hover:bg-brand-soft"
+              >
+                Terms of Service
+              </Link>
+              <Link
+                href="/privacy"
+                className="inline-flex items-center whitespace-nowrap rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 text-[11px] font-semibold text-brand transition-colors hover:border-brand/40 hover:bg-brand-soft"
+              >
+                Privacy Policy
+              </Link>
+            </span>
           </Label>
         </motion.div>
 
@@ -330,7 +331,7 @@ export function RegisterForm() {
 
       <motion.p variants={fieldVariants} className="mt-4 text-center text-sm text-muted-foreground">
         Already have an account?{' '}
-        <Link href="/login" className="font-medium text-blue-600 underline-offset-4 hover:underline">
+        <Link href="/login" className="font-medium text-brand underline-offset-4 hover:underline">
           Login
         </Link>
       </motion.p>

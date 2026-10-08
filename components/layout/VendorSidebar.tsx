@@ -418,7 +418,7 @@ export function VendorSidebar() {
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-yellow-400">
               {/* <Store className="h-4 w-4 text-blue-900" /> */}
               <div className="w-8 h-8 rounded bg-yellow-400 flex items-center justify-center shadow-sm">
-                                <Image src={'/icon.svg'} alt="Logo" height={40} width={40} />
+                                <Image src={'/logo-512.png'} alt="Logo" height={40} width={40} />
                               </div>
             </div>
             <div className="min-w-0">

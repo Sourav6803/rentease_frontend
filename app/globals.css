@@ -214,6 +214,40 @@
   --brand-accent: #fde68a;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Wire the brand into shadcn's semantic tokens.
+
+   Components read the SEMANTIC tokens, not --brand:
+     Button (default)  → bg-primary text-primary-foreground
+     links             → text-primary
+     focus rings       → --ring
+     hover surfaces    → --accent / --accent-foreground
+
+   Those were still the shadcn "neutral" greyscale defaults
+   (--primary: #171717 ≈ black, --ring: grey), which is why default
+   buttons and links rendered black instead of brand blue.
+
+   Declared after the brand tokens so var(--brand) resolves, and
+   because [data-accent] overrides --brand on <html>, every mapped
+   token follows the active accent automatically.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+  --ring: var(--brand);
+  --accent: var(--brand-soft);
+  --accent-foreground: var(--brand);
+}
+
+/* Same mapping in dark mode so buttons/rings stay brand-coloured.
+   --accent is intentionally left neutral here: --brand-soft is a very
+   light tint that would break dark hover surfaces. */
+.dark {
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+  --ring: var(--brand);
+}
+
 /* Smooth cross-fade when the accent (or light/dark) changes */
 .accent-transition,
 .accent-transition * {
@@ -243,4 +277,93 @@
 }
 .animate-ping-slow {
   animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* -------------------------------------------------------------
+   Vendor registration wizard - decorated form controls.
+
+   Scoped to .form-scope so every step (Business, Contact,
+   Verification, Bank, Terms) gets the same polished inputs without
+   touching the shadcn primitives used elsewhere in the app.
+   ------------------------------------------------------------- */
+.form-scope input:not([type='checkbox']):not([type='radio']):not([type='file']),
+.form-scope select,
+.form-scope textarea {
+  height: 2.875rem;
+  border-radius: 0.75rem;
+  border: 1.5px solid var(--border);
+  background-color: color-mix(in oklab, var(--muted) 32%, var(--card));
+  font-size: 0.875rem;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.form-scope input:hover:not(:disabled):not(:focus),
+.form-scope select:hover:not(:focus),
+.form-scope textarea:hover:not(:focus) {
+  border-color: color-mix(in oklab, var(--brand) 45%, var(--border));
+}
+
+.form-scope input:focus,
+.form-scope select:focus,
+.form-scope textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  background-color: var(--card);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--brand) 15%, transparent);
+}
+
+.form-scope input::placeholder,
+.form-scope textarea::placeholder {
+  color: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+}
+
+/* the select trigger gets the same treatment as inputs */
+.form-scope [data-slot='select-trigger'] {
+  height: 2.875rem;
+  border-radius: 0.75rem;
+  border-width: 1.5px;
+  border-color: var(--border);
+  background-color: color-mix(in oklab, var(--muted) 32%, var(--card));
+  padding-inline: 0.875rem;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.form-scope [data-slot='select-trigger']:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--brand) 15%, transparent);
+}
+
+/* labels read a touch stronger inside the wizard */
+.form-scope [data-slot='form-label'] {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.form-scope [data-slot='form-message'] {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Inner padding is deliberately NOT set here.
+
+   Unlayered CSS outranks Tailwind utilities, so setting `padding-inline` made
+   the decoration beat `pl-9` (fields with a leading icon) and `pl-16` (the
+   phone field, which reserves room for its "+91" prefix) — the placeholder then
+   slid under the icon/prefix. The shadcn primitives already ship sane padding
+   (px-2.5), and fields that need more declare their own utility, so padding is
+   left entirely to the components. */
+
+/* Centre a leading icon against the taller decorated input. `~ input` (not
+   `+ input`) so it also matches fields that put a prefix span in between.
+
+   NOTE: this must use the `translate` property, never `transform`.
+   Tailwind v4's `-translate-y-1/2` also writes the `translate` property, so
+   declaring the same property here just overrides it (same value, no change).
+   Declaring `transform: translateY(-50%)` alongside it does NOT override
+   anything — `translate` and `transform` are independent channels that compose,
+   so icons carrying the utility ended up centred twice and sat 8px too high. */
+.form-scope .relative:has(> svg.absolute ~ input) > svg.absolute {
+  top: 50%;
+  translate: 0 -50%;
 }

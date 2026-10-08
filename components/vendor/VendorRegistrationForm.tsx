@@ -16,7 +16,11 @@ import { ContactDetailsStep } from './steps/ContactDetailsStep'
 import { VerificationStep } from './steps/VerificationStep'
 // import { BankDetailsStep } from './steps/BankDetailsStep'
 import { TermsStep } from './steps/TermsStep'
-import { CheckCircle, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Clock, Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+const BRAND_GRADIENT =
+  'bg-[linear-gradient(135deg,var(--brand-gradient-from),var(--brand-gradient-to))]'
 import { BankDetailsStep } from './steps/BankDetailsSteps'
 import { vendorSchema, type VendorFormValues } from './vendor-registration-schema'
 import type { FieldPath, Resolver } from 'react-hook-form'
@@ -255,39 +259,64 @@ export function VendorRegistrationForm() {
   }
 
   return (
-    <div className="rounded-2xl border bg-card shadow-xl">
-      {/* Progress Header */}
-      <div className="border-b p-6">
-        <div className="flex items-center justify-between mb-4">
+    <div id="register" className="form-scope scroll-mt-24 overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+      {/* Progress header */}
+      <div className="border-b border-border bg-muted/25 p-5 sm:p-6">
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold">{steps[currentStep - 1].title}</h2>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-brand">
+              Step {currentStep} of {steps.length}
+            </p>
+            <h2 className="mt-1 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+              {steps[currentStep - 1].title}
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
               {steps[currentStep - 1].description}
             </p>
           </div>
-          <div className="text-sm text-muted-foreground">
-            Step {currentStep} of {steps.length}
+          <div className="hidden shrink-0 items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 sm:flex">
+            <Clock className="h-3.5 w-3.5 text-brand" />
+            <span className="text-[11px] font-semibold text-muted-foreground">~10 min</span>
           </div>
         </div>
-        <Progress value={progress} className="h-2" />
-        <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-          {steps.map((step) => (
-            <div key={step.id} className="flex flex-col items-center">
-              <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs ${
-                currentStep >= step.id ? 'bg-primary text-primary-foreground' : 'bg-muted'
-              }`}>
-                {currentStep > step.id ? <CheckCircle className="h-4 w-4" /> : step.id}
-              </div>
-              <span className="mt-1 hidden sm:inline">{step.title}</span>
-            </div>
-          ))}
-        </div>
+
+        <Progress value={progress} className="h-1.5" />
+
+        {/* Stepper */}
+        <ol className="mt-5 flex items-start justify-between gap-1">
+          {steps.map((step) => {
+            const done = currentStep > step.id
+            const active = currentStep === step.id
+            return (
+              <li key={step.id} className="flex flex-1 flex-col items-center text-center">
+                <span
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all',
+                    done && 'bg-brand text-white',
+                    active && 'bg-brand text-white ring-4 ring-brand/15',
+                    !done && !active && 'border border-border bg-card text-muted-foreground',
+                  )}
+                >
+                  {done ? <Check className="h-4 w-4" strokeWidth={3} /> : step.id}
+                </span>
+                <span
+                  className={cn(
+                    'mt-2 hidden text-[11px] font-semibold leading-tight sm:block',
+                    active || done ? 'text-foreground' : 'text-muted-foreground',
+                  )}
+                >
+                  {step.title}
+                </span>
+              </li>
+            )
+          })}
+        </ol>
       </div>
 
       {/* Form Content */}
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-          <div className="p-6">
+          <div className="p-5 sm:p-6">
             {currentStep === 1 && <BusinessDetailsStep form={form} />}
             {currentStep === 2 && <ContactDetailsStep form={form} />}
             {currentStep === 3 && (
@@ -303,27 +332,35 @@ export function VendorRegistrationForm() {
           </div>
 
           {/* Navigation Buttons */}
-          <div className="border-t p-6 flex justify-between">
+          <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/25 p-5 sm:p-6">
             <Button
               type="button"
               variant="outline"
               onClick={previousStep}
               disabled={currentStep === 1}
-              className="gap-2"
+              className="gap-2 rounded-xl"
             >
               <ChevronLeft className="h-4 w-4" />
               Previous
             </Button>
-            
+
             {currentStep < steps.length ? (
-              <Button type="button" onClick={nextStep} className="gap-2">
-                Next
+              <Button
+                type="button"
+                onClick={nextStep}
+                className={`gap-2 rounded-xl text-white shadow-lg shadow-brand/20 hover:opacity-90 ${BRAND_GRADIENT}`}
+              >
+                Save &amp; continue
                 <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
-              <Button type="submit" disabled={isSubmitting} className="gap-2">
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                Submit Application
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className={`gap-2 rounded-xl text-white shadow-lg shadow-brand/20 hover:opacity-90 ${BRAND_GRADIENT}`}
+              >
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Submit application
               </Button>
             )}
           </div>

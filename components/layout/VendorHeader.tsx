@@ -319,7 +319,7 @@ export function VendorHeader() {
               {/* Logo - fixed width to maintain layout */}
               <Link href="/vendor/dashboard" className="flex items-center sm:gap-2 gap-1 shrink-0 select-none">
                 <div className="sm:w-8 sm:h-8 w-5 h-5 rounded bg-yellow-400 flex items-center justify-center shadow-sm">
-                  <Image src={'/icon.svg'} alt="Logo" height={40} width={40} />
+                  <Image src={'/logo-512.png'} alt="Logo" height={40} width={40} />
                 </div>
                 <div className="hidden sm:block">
                   <p className="text-white font-extrabold text-base leading-none tracking-tight">

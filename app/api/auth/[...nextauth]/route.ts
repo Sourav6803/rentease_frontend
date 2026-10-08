@@ -259,6 +259,69 @@ export const authOptions: NextAuthOptions = {
         }
       },
     }),
+
+    // Bridges the backend's Google redirect back into a NextAuth session.
+    //
+    // The backend owns the real Google token exchange (GET /api/v1/auth/google
+    // → AuthService.socialLogin) and then bounces the browser to
+    // `${CLIENT_URL}/auth/social-callback?token=…&refreshToken=…`. This provider
+    // turns that hand-off into a session.
+    //
+    // It is NOT a bypass: the tokens are re-verified against the backend before
+    // anything is trusted, so a caller still needs a genuine RentEase token
+    // pair. It stays dormant until the Google button is enabled.
+    CredentialsProvider({
+      id: "social-handoff",
+      name: "Social handoff",
+      credentials: {
+        accessToken: { label: "Access token", type: "text" },
+        refreshToken: { label: "Refresh token", type: "text" },
+        loginType: { label: "Login type", type: "text" },
+      },
+
+      async authorize(credentials): Promise<AuthUser | null> {
+        const accessToken = credentials?.accessToken
+        if (!accessToken) throw new Error("Missing access token")
+
+        try {
+          const { data } = await axios.get(`${API_BASE_URL}/api/v1/auth/me`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            timeout: 10000,
+          })
+
+          const payload = data?.data ?? data
+          const userData = payload?.user ?? payload?.admin ?? payload
+
+          if (!userData?.email) throw new Error("Could not resolve the account")
+
+          return {
+            id: userData.id || userData._id,
+            email: userData.email,
+            name:
+              userData.fullName ||
+              `${userData.profile?.firstName || ""} ${
+                userData.profile?.lastName || ""
+              }`.trim() ||
+              userData.email,
+            role: normalizeAuthRole(userData.role),
+            isVerified:
+              userData.isVerified ?? userData.verification?.email ?? true,
+            loginType: credentials?.loginType || "user",
+            accessToken,
+            refreshToken: credentials?.refreshToken || undefined,
+          }
+        } catch (error) {
+          const data = axios.isAxiosError(error) ? error.response?.data : undefined
+
+          const backendMessage =
+            typeof data === "string"
+              ? data
+              : (data as { message?: string } | undefined)?.message
+
+          throw new Error(backendMessage || "Social sign-in could not be verified")
+        }
+      },
+    }),
   ],
 
   callbacks: {

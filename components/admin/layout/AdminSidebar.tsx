@@ -367,7 +367,7 @@
 //         {!collapsed ? (
 //           <Link href="/admin/dashboard" className="flex items-center gap-2 min-w-0">
 //             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
-//               <Image src="/icon.svg" alt="RentEase" width={22} height={22} priority />
+//               <Image src="/logo-512.png" alt="RentEase" width={22} height={22} priority />
 //             </div>
 //             <div className="min-w-0">
 //               <p className="text-sm font-extrabold text-white leading-none tracking-tight truncate">
@@ -380,7 +380,7 @@
 //           </Link>
 //         ) : (
 //           <div className="mx-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
-//             <Image src="/icon.svg" alt="RentEase" width={20} height={20} priority />
+//             <Image src="/logo-512.png" alt="RentEase" width={20} height={20} priority />
 //           </div>
 //         )}
 
@@ -846,7 +846,7 @@ function SidebarContent({
         {!collapsed ? (
           <Link href="/admin/dashboard" className="flex min-w-0 items-center gap-2">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
-              <Image src="/icon.svg" alt="RentEase" width={22} height={22} priority />
+              <Image src="/logo-512.png" alt="RentEase" width={22} height={22} priority />
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-extrabold leading-none tracking-tight text-white">
@@ -859,7 +859,7 @@ function SidebarContent({
           </Link>
         ) : (
           <div className="mx-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
-            <Image src="/icon.svg" alt="RentEase" width={20} height={20} priority />
+            <Image src="/logo-512.png" alt="RentEase" width={20} height={20} priority />
           </div>
         )}
 
