@@ -42,8 +42,8 @@ export default function Home() {
       {/* 2 · Category quick-access rail */}
       <CategoryRail categories={categories} isLoading={isLoading} />
 
-      {/* 3 · Promotional offer grid (dynamic promo banners → fallback) */}
-      <PromoGrid promos={banners.promo} />
+      {/* 3 · Promo pair #1 */}
+      <PromoGrid promos={banners.promo} from={0} take={2} />
 
       {/* 4 · "Still in your cart" nudge (logged-in, non-empty) */}
       <CartStrip />
@@ -61,7 +61,12 @@ export default function Home() {
         icon={<Flame className="h-4 w-4" />}
       />
 
-      {/* 7 · Personalized recommendations */}
+      {/* 7 · Promo pair #2 — promos are spread down the page in pairs so the
+             flow alternates promo → products → promo instead of stacking every
+             promo into one strip. Each pair hides itself once the list runs out. */}
+      <PromoGrid promos={banners.promo} from={2} take={2} />
+
+      {/* 8 · Personalized recommendations */}
       <ProductCarousel
         title="Recommended for you"
         subtitle="Picked based on popular choices"
@@ -71,10 +76,13 @@ export default function Home() {
         icon={<Sparkles className="h-4 w-4" />}
       />
 
-      {/* 8 · Recently viewed (client-side localStorage) */}
+      {/* 9 · Recently viewed (client-side localStorage) */}
       <RecentlyViewed />
 
-      {/* 9 · Featured */}
+      {/* 10 · Promo pair #3 */}
+      <PromoGrid promos={banners.promo} from={4} take={2} />
+
+      {/* 11 · Featured */}
       <ProductCarousel
         title="Featured Products"
         subtitle="Handpicked just for you"
@@ -84,10 +92,10 @@ export default function Home() {
         icon={<Zap className="h-4 w-4" />}
       />
 
-      {/* 10 · Your recent activity (logged-in) */}
+      {/* 12 · Your recent activity (logged-in) */}
       <RecentActivity />
 
-      {/* 11 · New arrivals */}
+      {/* 13 · New arrivals */}
       <ProductCarousel
         title="New Arrivals"
         subtitle="Fresh from the warehouse"
@@ -97,10 +105,10 @@ export default function Home() {
         icon={<Clock className="h-4 w-4" />}
       />
 
-      {/* 12 · Brand strip */}
+      {/* 14 · Brand strip */}
       <BrandStrip />
 
-      {/* 13 · Most popular */}
+      {/* 15 · Most popular */}
       <ProductCarousel
         title="Most Popular"
         subtitle="All-time favourites"
@@ -110,10 +118,10 @@ export default function Home() {
         icon={<TrendingUp className="h-4 w-4" />}
       />
 
-      {/* 14 · Infinite "For You" feed — scales to 1k+ products */}
+      {/* 16 · Infinite "For You" feed — scales to 1k+ products */}
       <InfiniteFeed />
 
-      {/* 15 · Newsletter */}
+      {/* 17 · Newsletter */}
       <Newsletter />
 
       {/* Floating widgets */}

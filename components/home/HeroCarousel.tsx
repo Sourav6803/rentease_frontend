@@ -121,13 +121,13 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
               />
             )}
 
-            {/* Overlay - Only for fallback slides or when no image exists */}
-            {!slide.image?.url || isFallback ? (
-              // Gradient overlay for fallback slides
+            {/* No full-bleed wash over the artwork — the banner image is shown
+                as-is. A gradient is kept only for a slide that has no image at
+                all, so it never renders as an empty box. Text stays legible via
+                a per-glyph shadow (set on the text below), which tints nothing
+                but the letters themselves. */}
+            {!slide.image?.url && (
               <div className={`absolute inset-0 bg-gradient-to-r ${slide.theme?.gradient || 'from-blue-700 to-indigo-700'} opacity-85`} />
-            ) : (
-              // Dark overlay for real banner images to improve text readability
-              <div className="absolute inset-0 bg-black/30" />
             )}
 
             {/* Content */}
@@ -145,7 +145,7 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
                 <motion.h2
                   initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
                   className="text-xl sm:text-3xl lg:text-5xl font-black leading-tight mb-2"
-                  style={{ color: slide.theme?.textColor || '#fff' }}
+                  style={{ color: slide.theme?.textColor || '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.25)' }}
                 >
                   {slide.title}
                 </motion.h2>
@@ -153,7 +153,7 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
                   <motion.p
                     initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
                     className="text-sm sm:text-lg lg:text-xl font-semibold mb-2 opacity-95"
-                    style={{ color: slide.theme?.textColor || '#fff' }}
+                    style={{ color: slide.theme?.textColor || '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.25)' }}
                   >
                     {slide.subtitle}
                   </motion.p>
@@ -162,7 +162,7 @@ export function HeroCarousel({ banners, isLoading }: { banners: Banner[]; isLoad
                   <motion.p
                     initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
                     className="hidden sm:block text-sm lg:text-base mb-5 opacity-90 max-w-lg"
-                    style={{ color: slide.theme?.textColor || '#fff' }}
+                    style={{ color: slide.theme?.textColor || '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.25)' }}
                   >
                     {slide.description}
                   </motion.p>
