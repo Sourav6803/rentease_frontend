@@ -247,6 +247,12 @@ const isPublicPath = (path: string): boolean => {
     '/reset-password',
     '/verify-email',
     '/resend-verification',
+    // The backend bounces Google sign-in here with the token pair in the query
+    // string. At that instant no session cookie exists yet, so without this
+    // entry the middleware treats the page as protected and redirects to
+    // /login?callbackUrl=/auth/social-callback before the handler can run —
+    // which made every Google login fail silently, with no error shown.
+    '/auth/social-callback',
     '/about',
     '/contact',
     '/privacy',

@@ -30,6 +30,17 @@ const DELIVERY_LOGIN_TYPES = new Set([
   "delivery_person",
 ])
 
+// Portal each role actually signs in through. The Google button only exists on
+// the customer sign-in page, so a social login that resolves to any other role
+// is sent back to the portal that account really belongs to.
+const SIGN_IN_PATH_BY_ROLE: Record<Role, string> = {
+  user: "/login",
+  vendor: "/vendor/login",
+  admin: "/admin/login",
+  "super-admin": "/admin/login",
+  delivery: "/delivery/auth/login",
+}
+
 function resolveLoginEndpoint(loginType?: string): string {
   if (
     loginType === "admin" ||
@@ -294,6 +305,22 @@ export const authOptions: NextAuthOptions = {
 
           if (!userData?.email) throw new Error("Could not resolve the account")
 
+          const role = normalizeAuthRole(userData.role)
+
+          // The Google button only exists on the customer sign-in page
+          // (components/forms/login/LoginForm.tsx). The backend resolves the role
+          // from whichever account owns the Google email, so without this check a
+          // vendor / admin / delivery account would be handed a session straight
+          // from the customer portal. The social-callback page blocks this too,
+          // but only in order to show a clear message — this is the hard stop, so
+          // the provider cannot be called directly to mint a wrong-portal session.
+          if (role !== "user") {
+            throw new Error(
+              `This Google account is registered as a ${role} account. ` +
+                `Please sign in through ${SIGN_IN_PATH_BY_ROLE[role]} instead.`,
+            )
+          }
+
           return {
             id: userData.id || userData._id,
             email: userData.email,
@@ -303,7 +330,7 @@ export const authOptions: NextAuthOptions = {
                 userData.profile?.lastName || ""
               }`.trim() ||
               userData.email,
-            role: normalizeAuthRole(userData.role),
+            role,
             isVerified:
               userData.isVerified ?? userData.verification?.email ?? true,
             loginType: credentials?.loginType || "user",
@@ -311,7 +338,13 @@ export const authOptions: NextAuthOptions = {
             refreshToken: credentials?.refreshToken || undefined,
           }
         } catch (error) {
-          const data = axios.isAxiosError(error) ? error.response?.data : undefined
+          // Only axios failures carry a backend message. Anything else was
+          // raised by us above, so surface it verbatim — otherwise the generic
+          // fallback below swallows the reason and the user is bounced with a
+          // message that explains nothing.
+          if (!axios.isAxiosError(error)) throw error
+
+          const data = error.response?.data
 
           const backendMessage =
             typeof data === "string"
